@@ -3,5 +3,9 @@
 version = 3
 
 [[package]]
+name = "da2"
+version = "0.1.0"
+
+[[package]]
 name = "declavatar2"
 version = "0.1.0"
