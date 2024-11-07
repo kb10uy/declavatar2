@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["declavatar2", "da2"]
+members = ["declavatar2", "da2", "declavatar2-dylib"]
 
 [workspace.package]
 version = "0.1.0"
