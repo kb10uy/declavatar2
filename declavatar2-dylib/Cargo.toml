@@ -1,5 +1,6 @@
 [package]
 name = "declavatar2-dylib"
+description = "C-ABI FFI wrapper for declavatar2"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
