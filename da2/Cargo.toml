@@ -1,0 +1,8 @@
+[package]
+name = "da2"
+version.workspace = true
+description.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]

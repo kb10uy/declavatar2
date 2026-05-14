@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["da2","declavatar2"]
+
+[workspace.package]
+version = "0.0.1"
+description = "Declarative Avatar Asset Composing Tool; Revised"
+authors = ["kb10uy <kb10uy@kb10uy.org>"]
+edition = "2024"
+
+[workspace.dependencies]
