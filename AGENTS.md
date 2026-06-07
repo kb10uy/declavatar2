@@ -10,6 +10,10 @@ The overall architecture remains Rust core + C FFI + any language client (mainly
 - **declavatar2** - Main library crate
 - **da2** - C FFI library (da2.dll, libda2.so, libda2.dylib) crate
 
+### Other Packages to be developed
+
+- **declavatar2-vrchat** - VRChat/Unity binding for declavatar2 via da2. In declavatar v1, its equivalent is [modular-declavatar](https://github.com/kb10uy/modular-declavatar).
+
 ## Architecture
 
 ### Pipeline Overview
