@@ -67,8 +67,9 @@ return da.avatar("name", {
 
 ## Code Style
 
-- Avoid comments by default (add comments only when explicitly requested by the user).
 - Rust edition 2024
+- Avoid comments by default (add comments only when explicitly requested by the user).
+- Utilize rstest features.
 
 ## Build & Test
 
