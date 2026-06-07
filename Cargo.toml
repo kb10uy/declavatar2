@@ -10,4 +10,5 @@ edition = "2024"
 
 [workspace.dependencies]
 either = "1.16.0"
+nalgebra = "0.35.0"
 rstest = "0.26.1"
