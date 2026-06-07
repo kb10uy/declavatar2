@@ -74,10 +74,35 @@ impl<E: MaybeZeroableEntry> ValueSet<E> {
 
         Ok(())
     }
+
+    /// Unions the entries from `defaults` into this set, using original entries.
+    /// Existing entries are won't be replaced.
+    /// If "orphan" entries exist in this set, they are returned in Err value.
+    pub fn union_from_defaults(&mut self, defaults: &ValueSet<E>) -> Result<(), Vec<E::Key>> {
+        let non_zeroable_orphans: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|(key, _)| !defaults.entries.contains_key(key))
+            .map(|(key, _)| key.clone())
+            .collect();
+        if !non_zeroable_orphans.is_empty() {
+            return Err(non_zeroable_orphans);
+        }
+
+        for (key, entry) in defaults.entries() {
+            if self.entries.contains_key(key) {
+                continue;
+            }
+            self.entries.insert(key.clone(), entry.clone());
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::slice::from_ref;
+
     use either::Either;
     use rstest::*;
 
@@ -214,5 +239,46 @@ mod tests {
                 TestEntry::zeroable("key6", 0),
             ]),
         );
+    }
+
+    #[rstest]
+    fn defaults_can_be_merged() {
+        let mut defaults = ValueSet::from([
+            TestEntry::zeroable("key1", 10),
+            TestEntry::zeroable("key3", 100),
+        ]);
+        let mut set = ValueSet::from([
+            TestEntry::zeroable("key1", 20),
+            TestEntry::zeroable("key2", 50),
+        ]);
+
+        let default_merge_result = defaults.union_fill_as_zero(from_ref(&set));
+        assert!(default_merge_result.is_ok());
+
+        let merge_result = set.union_from_defaults(&defaults);
+        assert!(merge_result.is_ok());
+        assert_eq!(
+            set,
+            ValueSet::from([
+                TestEntry::zeroable("key1", 20),
+                TestEntry::zeroable("key2", 50),
+                TestEntry::zeroable("key3", 100),
+            ]),
+        );
+    }
+
+    #[rstest]
+    fn orphan_defaults_will_fail() {
+        let defaults = ValueSet::from([
+            TestEntry::zeroable("key1", 10),
+            TestEntry::zeroable("key3", 100),
+        ]);
+        let mut set = ValueSet::from([
+            TestEntry::zeroable("key1", 20),
+            TestEntry::zeroable("key2", 50),
+        ]);
+
+        let merge_result = set.union_from_defaults(&defaults);
+        assert_eq!(merge_result, Err(vec!["key2"]));
     }
 }
