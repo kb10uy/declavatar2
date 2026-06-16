@@ -153,6 +153,46 @@ impl<P, T> Target for AnimatedComponentTarget<P, T> {
     }
 }
 
+/// Represents a parameter of AnimatorControllers.
+pub struct AnimatorParameter {
+    pub name: String,
+    pub value_type: AnimatorParameterType,
+    pub default_value: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnimatorParameterType {
+    Bool,
+    Int,
+    Float,
+}
+
+impl AnimatorParameter {
+    pub fn create_bool(name: impl Into<String>, default_value: Option<bool>) -> Self {
+        Self {
+            name: name.into(),
+            value_type: AnimatorParameterType::Bool,
+            default_value: default_value.map(|v| if v { 1.0 } else { 0.0 }),
+        }
+    }
+
+    pub fn create_int(name: impl Into<String>, default_value: Option<i32>) -> Self {
+        Self {
+            name: name.into(),
+            value_type: AnimatorParameterType::Int,
+            default_value: default_value.map(|v| v as f32),
+        }
+    }
+
+    pub fn create_float(name: impl Into<String>, default_value: Option<f32>) -> Self {
+        Self {
+            name: name.into(),
+            value_type: AnimatorParameterType::Float,
+            default_value,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
