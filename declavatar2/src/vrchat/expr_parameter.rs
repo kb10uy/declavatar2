@@ -1,8 +1,11 @@
+use serde::{Deserialize, Serialize};
+
 use crate::unity::AnimatedValueType;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Parameter {
     Expression(ExpressionParameter),
+    Vrchat(VrchatProvidedParameter),
 }
 
 /// Represents a [Expression Parameter](https://creators.vrchat.com/avatars/expression-menu-and-controls).
@@ -59,7 +62,9 @@ impl ExpressionParameterTypeDefault {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Provided parameters by VRChat.
+/// See [VRChat's documentation](https://creators.vrchat.com/avatars/animator-parameters/#built-in-parameters) about details.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VrchatProvidedParameter {
     IsLocal,
     PreviewMode,
@@ -77,8 +82,10 @@ pub enum VrchatProvidedParameter {
     Upright,
     Grounded,
     Seated,
+    #[serde(rename = "AFK")]
     Afk,
     TrackingType,
+    #[serde(rename = "VRMode")]
     VrMode,
     MuteSelf,
     InStation,
