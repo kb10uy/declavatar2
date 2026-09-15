@@ -24,7 +24,7 @@ pub enum ExpressionParameterTypeDefault {
     Bool(Option<bool>),
 
     /// Integer.
-    Int { width: ExpressionParameterWidth, default: Option<u8> },
+    Int { width: ExpressionParameterWidth, default: Option<i32> },
 
     /// Float \[-1.0, 1.0\].
     Float { width: ExpressionParameterWidth, default: Option<f32> },
