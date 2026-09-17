@@ -1,4 +1,6 @@
-use crate::unity::value::AnimatedValueType;
+use serde::Serialize;
+
+use crate::{core::phase::Phase, unity::value::AnimatedValueType};
 
 pub trait Target {
     /// Returns the type hint for this target, if known.
@@ -6,22 +8,23 @@ pub trait Target {
 }
 
 /// Target specifier for an animated property.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnimatedTarget<P, T> {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(bound(serialize = "Ph::ParameterRef: Serialize, Ph::ObjectPath: Serialize, Ph::ComponentType: Serialize"))]
+pub enum AnimatedTarget<Ph: Phase> {
     /// Animator itself. Mainly used for AAPs.
-    AnimatorSelf(AnimatedAnimatorTarget),
+    AnimatorSelf(AnimatedAnimatorTarget<Ph>),
 
     /// GameObject.
-    GameObject(AnimatedGameObjectTarget<P>),
+    GameObject(AnimatedGameObjectTarget<Ph>),
 
     /// Renderer, especially MeshRenderer and SkinnedMeshRenderer.
-    Renderer(AnimatedRendererTarget<P>),
+    Renderer(AnimatedRendererTarget<Ph>),
 
     /// Other component.
-    Component(AnimatedComponentTarget<P, T>),
+    Component(AnimatedComponentTarget<Ph>),
 }
 
-impl<P, T> Target for AnimatedTarget<P, T> {
+impl<Ph: Phase> Target for AnimatedTarget<Ph> {
     fn type_hint(&self) -> Option<AnimatedValueType> {
         match self {
             Self::AnimatorSelf(animator_self) => animator_self.type_hint(),
@@ -33,19 +36,21 @@ impl<P, T> Target for AnimatedTarget<P, T> {
 }
 
 /// Target specifier object for Animator properties.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AnimatedAnimatorTarget {
-    pub property: AnimatedAnimatorProperty,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(bound(serialize = "Ph::ParameterRef: Serialize"))]
+pub struct AnimatedAnimatorTarget<Ph: Phase> {
+    pub property: AnimatedAnimatorProperty<Ph>,
 }
 
 /// Represents animated property on an Animator component.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnimatedAnimatorProperty {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(bound(serialize = "Ph::ParameterRef: Serialize"))]
+pub enum AnimatedAnimatorProperty<Ph: Phase> {
     /// Float parameter value.
-    ParameterFloatValue { name: String },
+    ParameterFloatValue { name: Ph::ParameterRef },
 }
 
-impl Target for AnimatedAnimatorTarget {
+impl<Ph: Phase> Target for AnimatedAnimatorTarget<Ph> {
     fn type_hint(&self) -> Option<AnimatedValueType> {
         match self.property {
             AnimatedAnimatorProperty::ParameterFloatValue { .. } => Some(AnimatedValueType::Float),
@@ -54,14 +59,15 @@ impl Target for AnimatedAnimatorTarget {
 }
 
 /// Target specifier object for GameObject properties.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AnimatedGameObjectTarget<P> {
-    pub path: P,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(bound(serialize = "Ph::ObjectPath: Serialize"))]
+pub struct AnimatedGameObjectTarget<Ph: Phase> {
+    pub path: Ph::ObjectPath,
     pub property: AnimatedGameObjectProperty,
 }
 
 /// Represents animated property of a GameObject.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum AnimatedGameObjectProperty {
     /// Active/Inactive state.
     Active,
@@ -79,7 +85,7 @@ pub enum AnimatedGameObjectProperty {
     TransformScale,
 }
 
-impl<P> Target for AnimatedGameObjectTarget<P> {
+impl<Ph: Phase> Target for AnimatedGameObjectTarget<Ph> {
     fn type_hint(&self) -> Option<AnimatedValueType> {
         match self.property {
             AnimatedGameObjectProperty::Active => Some(AnimatedValueType::Bool),
@@ -92,15 +98,16 @@ impl<P> Target for AnimatedGameObjectTarget<P> {
 }
 
 /// Target specifier object for Renderers.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AnimatedRendererTarget<P> {
-    pub path: P,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(bound(serialize = "Ph::ObjectPath: Serialize"))]
+pub struct AnimatedRendererTarget<Ph: Phase> {
+    pub path: Ph::ObjectPath,
     pub renderer_type: String,
     pub property: AnimatedRendererProperty,
 }
 
 /// Represents animated property of a Renderer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum AnimatedRendererProperty {
     /// Enabled/disabled state.
     Enabled,
@@ -115,7 +122,7 @@ pub enum AnimatedRendererProperty {
     Serialized { name: String },
 }
 
-impl<P> Target for AnimatedRendererTarget<P> {
+impl<Ph: Phase> Target for AnimatedRendererTarget<Ph> {
     fn type_hint(&self) -> Option<AnimatedValueType> {
         match self.property {
             AnimatedRendererProperty::Enabled => Some(AnimatedValueType::Bool),
@@ -126,16 +133,17 @@ impl<P> Target for AnimatedRendererTarget<P> {
 }
 
 /// Target specifier object for arbitrary Unity components.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AnimatedComponentTarget<P, T> {
-    pub path: P,
-    pub component_type: T,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(bound(serialize = "Ph::ObjectPath: Serialize, Ph::ComponentType: Serialize"))]
+pub struct AnimatedComponentTarget<Ph: Phase> {
+    pub path: Ph::ObjectPath,
+    pub component_type: Ph::ComponentType,
     pub property: AnimatedComponentProperty,
     pub value_type: AnimatedValueType,
 }
 
 /// Represents animated property of a Unity component.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum AnimatedComponentProperty {
     /// Enabled/disabled state.
     Enabled,
@@ -144,7 +152,7 @@ pub enum AnimatedComponentProperty {
     Serialized { name: String },
 }
 
-impl<P, T> Target for AnimatedComponentTarget<P, T> {
+impl<Ph: Phase> Target for AnimatedComponentTarget<Ph> {
     fn type_hint(&self) -> Option<AnimatedValueType> {
         match self.property {
             AnimatedComponentProperty::Enabled => Some(AnimatedValueType::Bool),
@@ -198,12 +206,40 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        core::{
+            external::ExternTable,
+            phase::{Compiled, Declared},
+            resolution::{Resolved, Unresolved},
+        },
+        unity::external::ObjectPath,
+    };
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    enum TestPhase {}
+
+    impl Phase for TestPhase {
+        type ParameterRef = &'static str;
+        type ObjectPath = &'static str;
+        type ComponentType = &'static str;
+        type ObjectRef = ();
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    enum IndexPhase {}
+
+    impl Phase for IndexPhase {
+        type ParameterRef = &'static str;
+        type ObjectPath = u32;
+        type ComponentType = u32;
+        type ObjectRef = u32;
+    }
 
     #[rstest]
     #[case(
-        AnimatedTarget::<&str, &str>::AnimatorSelf(AnimatedAnimatorTarget {
+        AnimatedTarget::<TestPhase>::AnimatorSelf(AnimatedAnimatorTarget {
             property: AnimatedAnimatorProperty::ParameterFloatValue {
-                name: "GestureLeft".into(),
+                name: "GestureLeft",
             },
         }),
         Some(AnimatedValueType::Float),
@@ -301,20 +337,20 @@ mod tests {
         }),
         None,
     )]
-    fn animated_target_type_hints_match_expected(#[case] target: AnimatedTarget<&str, &str>, #[case] expected: Option<AnimatedValueType>) {
+    fn animated_target_type_hints_match_expected(#[case] target: AnimatedTarget<TestPhase>, #[case] expected: Option<AnimatedValueType>) {
         assert_eq!(target.type_hint(), expected);
     }
 
     #[rstest]
     #[case(
-        AnimatedAnimatorTarget {
+        AnimatedAnimatorTarget::<TestPhase> {
             property: AnimatedAnimatorProperty::ParameterFloatValue {
-                name: "GestureRight".into(),
+                name: "GestureRight",
             },
         },
         Some(AnimatedValueType::Float),
     )]
-    fn animator_target_reports_expected_type_hint(#[case] target: AnimatedAnimatorTarget, #[case] expected: Option<AnimatedValueType>) {
+    fn animator_target_reports_expected_type_hint(#[case] target: AnimatedAnimatorTarget<TestPhase>, #[case] expected: Option<AnimatedValueType>) {
         assert_eq!(target.type_hint(), expected);
     }
 
@@ -333,7 +369,7 @@ mod tests {
         },
         Some(AnimatedValueType::Vector3),
     )]
-    fn game_object_target_reports_expected_type_hint(#[case] target: AnimatedGameObjectTarget<&str>, #[case] expected: Option<AnimatedValueType>) {
+    fn game_object_target_reports_expected_type_hint(#[case] target: AnimatedGameObjectTarget<TestPhase>, #[case] expected: Option<AnimatedValueType>) {
         assert_eq!(target.type_hint(), expected);
     }
 
@@ -356,7 +392,7 @@ mod tests {
         },
         None,
     )]
-    fn renderer_target_reports_expected_type_hint(#[case] target: AnimatedRendererTarget<&str>, #[case] expected: Option<AnimatedValueType>) {
+    fn renderer_target_reports_expected_type_hint(#[case] target: AnimatedRendererTarget<TestPhase>, #[case] expected: Option<AnimatedValueType>) {
         assert_eq!(target.type_hint(), expected);
     }
 
@@ -381,7 +417,47 @@ mod tests {
         },
         None,
     )]
-    fn component_target_reports_expected_type_hint(#[case] target: AnimatedComponentTarget<&str, &str>, #[case] expected: Option<AnimatedValueType>) {
+    fn component_target_reports_expected_type_hint(#[case] target: AnimatedComponentTarget<TestPhase>, #[case] expected: Option<AnimatedValueType>) {
         assert_eq!(target.type_hint(), expected);
+    }
+
+    #[rstest]
+    fn declared_targets_with_same_name_are_equal() {
+        let first = AnimatedTarget::<Declared>::GameObject(AnimatedGameObjectTarget {
+            path: Unresolved::new("Armature/Hips".into()),
+            property: AnimatedGameObjectProperty::Active,
+        });
+        let second = AnimatedTarget::<Declared>::GameObject(AnimatedGameObjectTarget {
+            path: Unresolved::new("Armature/Hips".into()),
+            property: AnimatedGameObjectProperty::Active,
+        });
+        assert_eq!(first, second);
+    }
+
+    #[rstest]
+    fn compiled_targets_serialize_references_as_index_and_name() {
+        let mut paths = ExternTable::<ObjectPath>::new();
+        paths.intern(Unresolved::new("Body".into()));
+        let hips = paths.intern(Unresolved::new("Armature/Hips".into()));
+
+        let game_object = AnimatedTarget::<Compiled>::GameObject(AnimatedGameObjectTarget {
+            path: hips,
+            property: AnimatedGameObjectProperty::Active,
+        });
+        let expected = AnimatedTarget::<IndexPhase>::GameObject(AnimatedGameObjectTarget {
+            path: 1,
+            property: AnimatedGameObjectProperty::Active,
+        });
+        assert_eq!(rmp_serde::to_vec_named(&game_object).unwrap(), rmp_serde::to_vec_named(&expected).unwrap());
+
+        let animator_self = AnimatedTarget::<Compiled>::AnimatorSelf(AnimatedAnimatorTarget {
+            property: AnimatedAnimatorProperty::ParameterFloatValue {
+                name: Resolved::new("GestureLeft".into(), AnimatedValueType::Int),
+            },
+        });
+        let expected = AnimatedTarget::<TestPhase>::AnimatorSelf(AnimatedAnimatorTarget {
+            property: AnimatedAnimatorProperty::ParameterFloatValue { name: "GestureLeft" },
+        });
+        assert_eq!(rmp_serde::to_vec_named(&animator_self).unwrap(), rmp_serde::to_vec_named(&expected).unwrap());
     }
 }

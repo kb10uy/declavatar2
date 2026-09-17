@@ -1,47 +1,50 @@
 use std::collections::HashMap;
 
-use crate::unity::{state::StateBehavior, value::AnimatedValue};
+use crate::{
+    core::phase::Phase,
+    unity::{state::StateBehavior, value::AnimatedValue},
+};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParameterDrive {
-    pub target: ParameterDriveTarget,
+pub struct ParameterDrive<Ph: Phase> {
+    pub target: ParameterDriveTarget<Ph>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ParameterDriveTarget {
+pub enum ParameterDriveTarget<Ph: Phase> {
     Set {
-        parameter: String,
+        parameter: Ph::ParameterRef,
         value: AnimatedValue<()>,
     },
     Add {
-        parameter: String,
+        parameter: Ph::ParameterRef,
         value: AnimatedValue<()>,
     },
     RandomInt {
-        parameter: String,
+        parameter: Ph::ParameterRef,
         range: [i64; 2],
     },
     RandomBool {
-        parameter: String,
+        parameter: Ph::ParameterRef,
         chance: f64,
     },
     RandomFloat {
-        parameter: String,
+        parameter: Ph::ParameterRef,
         range: [f64; 2],
     },
     Copy {
-        from: String,
-        to: String,
+        from: Ph::ParameterRef,
+        to: Ph::ParameterRef,
     },
     RangedCopy {
-        from: String,
+        from: Ph::ParameterRef,
         from_range: [f64; 2],
-        to: String,
+        to: Ph::ParameterRef,
         to_range: [f64; 2],
     },
 }
 
-impl StateBehavior for ParameterDrive {
+impl<Ph: Phase> StateBehavior for ParameterDrive<Ph> {
     fn name(&self) -> &'static str {
         "VRCAvatarParameterDriver"
     }

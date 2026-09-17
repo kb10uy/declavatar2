@@ -1,7 +1,8 @@
 use nalgebra::{UnitQuaternion, Vector2, Vector3, Vector4};
+use serde::{Deserialize, Serialize};
 
 /// Represents types of values that can be animated within Unity Animator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum AnimatedValueType {
     Float,
     Int,
@@ -55,25 +56,27 @@ impl<R: Clone> AnimatedValue<R> {
     pub fn cast(&self, target_type: AnimatedValueType) -> AnimatedValueCast<R> {
         match (self, target_type) {
             (s, t) if s.value_type() == t => AnimatedValueCast::Same,
-            (Self::Float(x), AnimatedValueType::Int) => {
-                AnimatedValueCast::Compatible(Self::Int(*x as i64))
-            }
-            (Self::Float(x), AnimatedValueType::Bool) => {
-                AnimatedValueCast::Compatible(Self::Bool(*x >= 0.5))
-            }
-            (Self::Int(x), AnimatedValueType::Float) => {
-                AnimatedValueCast::Compatible(Self::Float(*x as f64))
-            }
-            (Self::Int(x), AnimatedValueType::Bool) => {
-                AnimatedValueCast::Compatible(Self::Bool(*x != 0))
-            }
-            (Self::Bool(x), AnimatedValueType::Float) => {
-                AnimatedValueCast::Compatible(Self::Float(if *x { 1.0 } else { 0.0 }))
-            }
-            (Self::Bool(x), AnimatedValueType::Int) => {
-                AnimatedValueCast::Compatible(Self::Int(if *x { 1 } else { 0 }))
-            }
+            (Self::Float(x), AnimatedValueType::Int) => AnimatedValueCast::Compatible(Self::Int(*x as i64)),
+            (Self::Float(x), AnimatedValueType::Bool) => AnimatedValueCast::Compatible(Self::Bool(*x >= 0.5)),
+            (Self::Int(x), AnimatedValueType::Float) => AnimatedValueCast::Compatible(Self::Float(*x as f64)),
+            (Self::Int(x), AnimatedValueType::Bool) => AnimatedValueCast::Compatible(Self::Bool(*x != 0)),
+            (Self::Bool(x), AnimatedValueType::Float) => AnimatedValueCast::Compatible(Self::Float(if *x { 1.0 } else { 0.0 })),
+            (Self::Bool(x), AnimatedValueType::Int) => AnimatedValueCast::Compatible(Self::Int(if *x { 1 } else { 0 })),
             _ => AnimatedValueCast::Incompatible,
+        }
+    }
+
+    pub fn zeroed(&self) -> Option<AnimatedValue<R>> {
+        match self {
+            AnimatedValue::Float(_) => Some(AnimatedValue::Float(0.0)),
+            AnimatedValue::Int(_) => Some(AnimatedValue::Int(0)),
+            AnimatedValue::Bool(_) => Some(AnimatedValue::Bool(false)),
+            AnimatedValue::Vector2(_) => Some(AnimatedValue::Vector2(Vector2::zeros())),
+            AnimatedValue::Vector3(_) => Some(AnimatedValue::Vector3(Vector3::zeros())),
+            AnimatedValue::Vector4(_) => Some(AnimatedValue::Vector4(Vector4::zeros())),
+            AnimatedValue::Quaternion(_) => Some(AnimatedValue::Quaternion(UnitQuaternion::identity())),
+            AnimatedValue::Color(_) => Some(AnimatedValue::Color(Vector4::zeros())),
+            AnimatedValue::ObjectReference(_) => None,
         }
     }
 }
@@ -94,10 +97,7 @@ mod tests {
     #[case(AnimatedValue::Quaternion(UnitQuaternion::identity()), AnimatedValueType::Quaternion)]
     #[case(AnimatedValue::Color([0.0, 0.0, 0.0, 0.0].into()), AnimatedValueType::Color)]
     #[case(AnimatedValue::ObjectReference(()), AnimatedValueType::ObjectReference)]
-    fn animated_value_reports_its_type(
-        #[case] value: AnimatedValue<()>,
-        #[case] expected: AnimatedValueType,
-    ) {
+    fn animated_value_reports_its_type(#[case] value: AnimatedValue<()>, #[case] expected: AnimatedValueType) {
         assert_eq!(value.value_type(), expected);
         assert_eq!(value.cast(expected), AnimatedValueCast::Same);
     }
@@ -109,11 +109,7 @@ mod tests {
     #[case(AnimatedValue::Int(42), AnimatedValueType::Bool, AnimatedValue::Bool(true))]
     #[case(AnimatedValue::Bool(true), AnimatedValueType::Float, AnimatedValue::Float(1.0))]
     #[case(AnimatedValue::Bool(true), AnimatedValueType::Int, AnimatedValue::Int(1))]
-    fn value_cast_works(
-        #[case] value: AnimatedValue<()>,
-        #[case] target: AnimatedValueType,
-        #[case] expected: AnimatedValue<()>,
-    ) {
+    fn value_cast_works(#[case] value: AnimatedValue<()>, #[case] target: AnimatedValueType, #[case] expected: AnimatedValue<()>) {
         assert_eq!(value.cast(target), AnimatedValueCast::Compatible(expected));
     }
 }
