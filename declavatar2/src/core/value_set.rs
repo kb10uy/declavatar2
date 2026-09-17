@@ -19,9 +19,7 @@ pub struct ValueSet<E: MaybeZeroableEntry> {
 
 impl<E: MaybeZeroableEntry> Default for ValueSet<E> {
     fn default() -> Self {
-        Self {
-            entries: BTreeMap::new(),
-        }
+        Self { entries: BTreeMap::new() }
     }
 }
 
@@ -48,10 +46,7 @@ impl<E: MaybeZeroableEntry> ValueSet<E> {
     /// Unions the entries from `others` into this set, using zeroed values for zeroable entries.
     /// Existing entries won't be replaced with zeroed values.
     /// If any non-zeroable entry is found only in `others`, they are returned in Err value.
-    pub fn union_fill_as_zero<'a>(
-        &'a mut self,
-        others: impl IntoIterator<Item = &'a ValueSet<E>>,
-    ) -> Result<(), Vec<E::Key>> {
+    pub fn union_fill_as_zero<'a>(&'a mut self, others: impl IntoIterator<Item = &'a ValueSet<E>>) -> Result<(), Vec<E::Key>> {
         let mut non_zeroables = Vec::new();
         let mut zeroed_entries = Vec::new();
         for (other_key, other_entry) in others.into_iter().flat_map(|vs| vs.entries()) {
@@ -67,9 +62,7 @@ impl<E: MaybeZeroableEntry> ValueSet<E> {
         }
 
         for zeroed_entry in zeroed_entries {
-            self.entries
-                .entry(zeroed_entry.key())
-                .or_insert(zeroed_entry);
+            self.entries.entry(zeroed_entry.key()).or_insert(zeroed_entry);
         }
 
         Ok(())
@@ -135,18 +128,9 @@ mod tests {
 
     #[rstest]
     fn zeroed_sets_can_be_merged() {
-        let mut default_set = ValueSet::from([
-            TestEntry::zeroable("key1", 0),
-            TestEntry::zeroable("key2", 10),
-        ]);
-        let other1 = ValueSet::from([
-            TestEntry::zeroable("key1", 10),
-            TestEntry::zeroable("key3", 10),
-        ]);
-        let other2 = ValueSet::from([
-            TestEntry::zeroable("key2", 30),
-            TestEntry::zeroable("key4", 100),
-        ]);
+        let mut default_set = ValueSet::from([TestEntry::zeroable("key1", 0), TestEntry::zeroable("key2", 10)]);
+        let other1 = ValueSet::from([TestEntry::zeroable("key1", 10), TestEntry::zeroable("key3", 10)]);
+        let other2 = ValueSet::from([TestEntry::zeroable("key2", 30), TestEntry::zeroable("key4", 100)]);
 
         let merge_result = default_set.union_fill_as_zero(&[other1, other2]);
         assert!(merge_result.is_ok());
@@ -163,36 +147,18 @@ mod tests {
 
     #[rstest]
     fn non_zeroable_entries_will_fail() {
-        let mut default_set = ValueSet::from([
-            TestEntry::zeroable("key1", 0),
-            TestEntry::zeroable("key2", 10),
-        ]);
-        let other1 = ValueSet::from([
-            TestEntry::zeroable("key1", 10),
-            TestEntry::non_zeroable("key3"),
-        ]);
-        let other2 = ValueSet::from([
-            TestEntry::zeroable("key2", 30),
-            TestEntry::non_zeroable("key4"),
-        ]);
+        let mut default_set = ValueSet::from([TestEntry::zeroable("key1", 0), TestEntry::zeroable("key2", 10)]);
+        let other1 = ValueSet::from([TestEntry::zeroable("key1", 10), TestEntry::non_zeroable("key3")]);
+        let other2 = ValueSet::from([TestEntry::zeroable("key2", 30), TestEntry::non_zeroable("key4")]);
 
         let merge_result = default_set.union_fill_as_zero(&[other1, other2]);
         assert_eq!(merge_result, Err(vec!["key3", "key4"]));
-        assert_eq!(
-            default_set,
-            ValueSet::from([
-                TestEntry::zeroable("key1", 0),
-                TestEntry::zeroable("key2", 10),
-            ])
-        );
+        assert_eq!(default_set, ValueSet::from([TestEntry::zeroable("key1", 0), TestEntry::zeroable("key2", 10),]));
     }
 
     #[rstest]
     fn non_zeroable_in_default_set_can_be_merged() {
-        let mut default_set = ValueSet::from([
-            TestEntry::non_zeroable("key1"),
-            TestEntry::non_zeroable("key2"),
-        ]);
+        let mut default_set = ValueSet::from([TestEntry::non_zeroable("key1"), TestEntry::non_zeroable("key2")]);
         let other1 = ValueSet::from([TestEntry::zeroable("key3", 10)]);
         let other2 = ValueSet::from([TestEntry::zeroable("key4", 100)]);
 
@@ -217,14 +183,8 @@ mod tests {
             TestEntry::non_zeroable("key3"),
             TestEntry::non_zeroable("key4"),
         ]);
-        let other1 = ValueSet::from([
-            TestEntry::non_zeroable("key3"),
-            TestEntry::zeroable("key5", 100),
-        ]);
-        let other2 = ValueSet::from([
-            TestEntry::non_zeroable("key4"),
-            TestEntry::zeroable("key6", 100),
-        ]);
+        let other1 = ValueSet::from([TestEntry::non_zeroable("key3"), TestEntry::zeroable("key5", 100)]);
+        let other2 = ValueSet::from([TestEntry::non_zeroable("key4"), TestEntry::zeroable("key6", 100)]);
 
         let merge_result = default_set.union_fill_as_zero(&[other1, other2]);
         assert!(merge_result.is_ok());
@@ -243,14 +203,8 @@ mod tests {
 
     #[rstest]
     fn defaults_can_be_merged() {
-        let mut defaults = ValueSet::from([
-            TestEntry::zeroable("key1", 10),
-            TestEntry::zeroable("key3", 100),
-        ]);
-        let mut set = ValueSet::from([
-            TestEntry::zeroable("key1", 20),
-            TestEntry::zeroable("key2", 50),
-        ]);
+        let mut defaults = ValueSet::from([TestEntry::zeroable("key1", 10), TestEntry::zeroable("key3", 100)]);
+        let mut set = ValueSet::from([TestEntry::zeroable("key1", 20), TestEntry::zeroable("key2", 50)]);
 
         let default_merge_result = defaults.union_fill_as_zero(from_ref(&set));
         assert!(default_merge_result.is_ok());
@@ -269,14 +223,8 @@ mod tests {
 
     #[rstest]
     fn orphan_defaults_will_fail() {
-        let defaults = ValueSet::from([
-            TestEntry::zeroable("key1", 10),
-            TestEntry::zeroable("key3", 100),
-        ]);
-        let mut set = ValueSet::from([
-            TestEntry::zeroable("key1", 20),
-            TestEntry::zeroable("key2", 50),
-        ]);
+        let defaults = ValueSet::from([TestEntry::zeroable("key1", 10), TestEntry::zeroable("key3", 100)]);
+        let mut set = ValueSet::from([TestEntry::zeroable("key1", 20), TestEntry::zeroable("key2", 50)]);
 
         let merge_result = set.union_from_defaults(&defaults);
         assert_eq!(merge_result, Err(vec!["key2"]));
