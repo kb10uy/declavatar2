@@ -15,6 +15,12 @@ pub enum AnimatedValueType {
     ObjectReference,
 }
 
+impl AnimatedValueType {
+    pub fn is_interpolable(&self) -> bool {
+        !matches!(self, Self::Int | Self::Bool | Self::ObjectReference)
+    }
+}
+
 /// Represents a value that can be expressed and animated within Unity Animator,
 /// with a generic type `R` for object references.
 #[derive(Debug, Clone, PartialEq)]

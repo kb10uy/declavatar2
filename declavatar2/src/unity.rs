@@ -4,6 +4,7 @@ pub mod external;
 pub mod state;
 pub mod value;
 
+pub use animation::{ClipAttributes, Curve, CurveError, FixedAnimationEntry, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe};
 pub use animator::{
     AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty, AnimatedGameObjectTarget,
     AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget,
