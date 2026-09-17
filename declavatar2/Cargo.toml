@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 nalgebra = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 either = { workspace = true }

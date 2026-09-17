@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::{
     core::{
@@ -125,21 +126,24 @@ pub enum Interpolation {
     Bezier { x1: f64, y1: f64, x2: f64, y2: f64 },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Error)]
 pub enum CurveError {
+    #[error("keyframe time {0} is out of range [0.0, 1.0]")]
     TimeOutOfRange(f64),
-    TimeNotIncreasing {
-        previous: f64,
-        next: f64,
-    },
-    InconsistentValueType {
-        expected: AnimatedValueType,
-        found: AnimatedValueType,
-    },
+
+    #[error("keyframe time {next} does not increase from previous {previous}")]
+    TimeNotIncreasing { previous: f64, next: f64 },
+
+    #[error("expected {expected:?} value but found {found:?}")]
+    InconsistentValueType { expected: AnimatedValueType, found: AnimatedValueType },
+
+    #[error("{interpolation:?} interpolation cannot be applied to {value_type:?} values")]
     InterpolationNotApplicable {
         interpolation: Interpolation,
         value_type: AnimatedValueType,
     },
+
+    #[error("bezier control point x {0} is out of range [0.0, 1.0]")]
     ControlPointOutOfRange(f64),
 }
 
@@ -364,6 +368,17 @@ mod tests {
     )]
     fn invalid_curves_fail(#[case] curve: Curve<&'static str>, #[case] expected: CurveError) {
         assert_eq!(curve.validate(), Err(expected));
+    }
+
+    #[rstest]
+    #[case(CurveError::TimeOutOfRange(1.5), "keyframe time 1.5 is out of range [0.0, 1.0]")]
+    #[case(CurveError::TimeNotIncreasing { previous: 1.0, next: 0.5 }, "keyframe time 0.5 does not increase from previous 1")]
+    #[case(
+        CurveError::InterpolationNotApplicable { interpolation: Interpolation::Linear, value_type: AnimatedValueType::Bool },
+        "Linear interpolation cannot be applied to Bool values",
+    )]
+    fn curve_errors_display_messages(#[case] error: CurveError, #[case] expected: &str) {
+        assert_eq!(error.to_string(), expected);
     }
 
     #[rstest]
