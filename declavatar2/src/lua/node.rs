@@ -65,6 +65,21 @@ declare_nodes! {
     /// Animated target and the value written for it.
     "target" => Target(crate::unity::animation::FixedAnimationEntry<crate::core::phase::Declared>),
 
+    /// Entry of the `fx_controller` block.
+    "layer" => Layer(decl::layer::Layer),
+
+    /// Default state of a group layer, written with `da.default`.
+    "default" => GroupDefault(decl::behavior::Content),
+
+    /// One option of a group layer, written with `da.option`.
+    "option" => GroupOption(decl::layer::GroupOption),
+
+    /// One keyframe of a puppet layer, written with `da.keyframe`.
+    "keyframe" => Keyframe(decl::layer::PuppetKeyframe),
+
+    /// Entry of the `exports` block.
+    "export" => Export(decl::avatar::Export),
+
     /// Parameter drive written with `da.drive_*`.
     "drive" => Drive(decl::behavior::Drive),
 

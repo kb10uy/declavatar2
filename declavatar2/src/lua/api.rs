@@ -1,4 +1,5 @@
 pub mod behavior;
+pub mod layer;
 pub mod parameter;
 pub mod target;
 
@@ -46,6 +47,7 @@ fn register_root(lua: &Lua, da: &Table, symbols: &Rc<BTreeSet<String>>) -> LuaRe
     da.set("quat", lua.create_function(quat)?)?;
 
     behavior::register(lua, da)?;
+    layer::register(lua, da)?;
     parameter::register(lua, da)?;
     target::register(lua, da)?;
 
@@ -57,15 +59,19 @@ fn avatar(lua: &Lua, blocks: Option<Table>) -> LuaResult<node::Avatar> {
 
     let mut options = Options::new(OWNER, blocks);
     let parameters = options.take::<Table>("parameters")?;
-    let _fx_controller = options.take::<Table>("fx_controller")?;
+    let fx_controller = options.take::<Table>("fx_controller")?;
     let _menu = options.take::<Table>("menu")?;
-    let _exports = options.take::<Table>("exports")?;
+    let exports = options.take::<Table>("exports")?;
     options.finish()?;
 
     let parameters = block::<node::Parameter, _>(lua, "da.avatar: parameters", parameters)?;
+    let fx_controller = block::<node::Layer, _>(lua, "da.avatar: fx_controller", fx_controller)?;
+    let exports = block::<node::Export, _>(lua, "da.avatar: exports", exports)?;
 
     Ok(node::Avatar(decl::Avatar {
         parameters,
+        fx_controller,
+        exports,
         ..decl::Avatar::default()
     }))
 }
