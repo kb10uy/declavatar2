@@ -12,6 +12,7 @@ pub enum Layer {
     Group(GroupLayer),
     Switch(SwitchLayer),
     Puppet(PuppetLayer),
+    Blend(BlendLayer),
     Raw(RawLayer),
 }
 
@@ -21,6 +22,7 @@ impl Layer {
             Layer::Group(layer) => &layer.name,
             Layer::Switch(layer) => &layer.name,
             Layer::Puppet(layer) => &layer.name,
+            Layer::Blend(layer) => &layer.name,
             Layer::Raw(layer) => &layer.name,
         }
     }
@@ -30,6 +32,7 @@ impl Layer {
             Layer::Group(layer) => layer.at.as_ref(),
             Layer::Switch(layer) => layer.at.as_ref(),
             Layer::Puppet(layer) => layer.at.as_ref(),
+            Layer::Blend(layer) => layer.at.as_ref(),
             Layer::Raw(layer) => layer.at.as_ref(),
         }
     }
@@ -50,7 +53,6 @@ pub struct GroupLayer {
 #[derive(Debug, Clone)]
 pub struct GroupOption {
     pub name: String,
-    pub index: Option<u32>,
     pub content: Content,
     pub at: Option<SourceLocation>,
 }
@@ -95,4 +97,12 @@ pub struct PuppetLayer {
 pub struct PuppetKeyframe {
     pub time: f64,
     pub animation: Animation,
+}
+
+/// Layer that merges its children into one direct blend tree.
+#[derive(Debug, Clone)]
+pub struct BlendLayer {
+    pub name: String,
+    pub puppets: Vec<PuppetLayer>,
+    pub at: Option<SourceLocation>,
 }

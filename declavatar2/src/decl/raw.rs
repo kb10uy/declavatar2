@@ -61,13 +61,29 @@ pub struct ClipOptions {
     pub time_by: Option<Unresolved<String>>,
 }
 
-/// Motion that blends its fields by one or two parameters.
+/// Motion that blends its fields.
 #[derive(Debug, Clone)]
-pub struct BlendTree {
+pub enum BlendTree {
+    /// Fields placed on one or two parameter axes.
+    Parametric(ParametricBlendTree),
+
+    /// Fields summed with a weight parameter each.
+    Direct(DirectBlendTree),
+}
+
+/// Blend tree whose fields are placed on one or two parameter axes.
+#[derive(Debug, Clone)]
+pub struct ParametricBlendTree {
     pub tree_type: BlendTreeType,
     pub x: Unresolved<String>,
     pub y: Option<Unresolved<String>>,
     pub fields: Vec<BlendTreeField>,
+}
+
+/// Blend tree whose fields are summed with a weight parameter each.
+#[derive(Debug, Clone)]
+pub struct DirectBlendTree {
+    pub fields: Vec<DirectBlendTreeField>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -85,10 +101,17 @@ impl BlendTreeType {
     }
 }
 
-/// One field of a `BlendTree`.
+/// One field of a `ParametricBlendTree`.
 #[derive(Debug, Clone)]
 pub struct BlendTreeField {
     pub position: [f64; 2],
+    pub motion: Motion,
+}
+
+/// One field of a `DirectBlendTree`.
+#[derive(Debug, Clone)]
+pub struct DirectBlendTreeField {
+    pub weight_by: Unresolved<String>,
     pub motion: Motion,
 }
 

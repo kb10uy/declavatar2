@@ -95,7 +95,6 @@ mod tests {
                     }),
                     options: vec![GroupOption {
                         name: "smile".into(),
-                        index: None,
                         content: Content {
                             animation: Animation::from([shape("Face", "smile", 1.0), shape("Face", "eye_joy", 0.5)]),
                             behaviors: vec![],

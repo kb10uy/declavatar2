@@ -41,7 +41,7 @@ Lua script
 - Scripts `require "declavatar"` (conventionally bound to `da`) and end with `return da.avatar(...)`, returning exactly one avatar (like Lua module convention).
 - Builders are Rust-side mlua functions that return immutable userdata nodes. Invalid construction fails at the call site with the Lua traceback. No getters are exposed until a need arises.
 - Every builder records the caller's chunk and line into `Unresolved.at` so transform errors can point at the script.
-- Argument order: the trailing argument is always the child list; an optional options table precedes it (`da.group_layer(name, opts, children)`, `da.option(name, targets)`). `da.raw.field(position, motion)` is the one exception, its trailing argument is a single motion.
+- Argument order: the trailing argument is always the child list; an optional options table precedes it (`da.group_layer(name, opts, children)`, `da.option(name, targets)`). `da.raw.field(position, motion)` and `da.raw.weighted(parameter, motion)` are the exceptions, their trailing argument is a single motion. `da.switch_layer` takes one or two trailing child lists and is the only builder whose options table is required, so its form is decided by argument count alone.
 - Lists passed to builders are plain Lua tables.
     - `false` entries are skipped, so `cond and da.bool("X")` expresses a conditional element.
     - Nested lists are an error. Unlike declavatar v1, declavatar2 does not auto-flatten.
@@ -70,17 +70,27 @@ Lua script
 
 #### Layers
 
-- `da.group_layer(name, { driven_by, symmetric }, { da.default { ... }, da.option(name[, { index }], targets), ... })`.
+- `da.group_layer(name, { driven_by, symmetric }, { da.default { ... }, da.option(name, targets), ... })`.
+    - Option indices are assigned automatically during transform; declarations cannot specify them. References such as `da.drive_group(layer, option)` resolve the generated value from the layer and option. Use raw layers when parameter values are externally constrained.
     - Completion is always mutual-zeroed: the default absorbs the zeroed union of every option's keys (`ValueSet::union_fill_as_zero`), then each option inherits the default entries it lacks (`ValueSet::union_from_defaults`). There is no copy mode.
     - A non-zeroable entry (object reference) used by an option but missing from the default is an error.
     - `symmetric` chooses the state machine shape only; clip contents are the same either way.
-        - `true` (default): every state is equal. Entry fans out to each option on `== index` and falls back to the default state, each option exits on `!= index`, the default state exits on each `== index`. Switching between options never passes through the default state, so its behaviors do not run on the way. Entry transitions cannot have a duration.
-        - `false`: the v1 hub. The default state transitions to each option on `== index`, each option returns to the default state on `!= index`. Every switch passes through the default state for one frame and runs its behaviors; use this when that pass or a transition duration is wanted.
+        - `true` (default): every state is equal. Entry fans out to each option on `== index` and falls back to the default state, each option exits on `!= index`, the default state exits on each `== index`. Switching between options never passes through the default state, so its behaviors do not run on the way. Entry transitions carry no duration; a crossfade is set on the exit transitions and applies to whatever state Entry resolves to, so it is per source state, not per destination.
+        - `false`: the v1 hub. The default state transitions to each option on `== index`, each option returns to the default state on `!= index`. Every switch passes through the default state for one frame and runs its behaviors; use this when that pass or per-transition durations are wanted.
     - Direct blend tree output is not generated from a group layer. Write `da.raw.state` with `da.raw.blend_tree({ type = "linear" })` for that.
-- `da.switch_layer(name, { driven_by | gate }, children)`.
-    - A sequence is a toggle list: on gets the given or full value, off gets the zeroed value. Explicit `false` or zero values in a toggle list are an error.
-    - `{ off = { ... }, on = { ... } }` spells both sides out.
-- `da.puppet_layer(name, { driven_by }, { da.keyframe(t, targets), ... })`. Keyframes are joined with linear interpolation; `Curve` interpolation is not exposed for now.
+- `da.switch_layer(name, { driven_by | gate }, enabled)` or `da.switch_layer(name, { driven_by | gate }, disabled, enabled)`.
+    - The options table is required (pass `{}` when empty) so that three arguments always mean a toggle list and four always mean both sides. Table shapes are never inspected to tell the forms apart.
+    - The three-argument form is a toggle list: on gets the given or full value, off gets the zeroed value. Explicit `false` or zero values in a toggle list are an error.
+    - The four-argument form spells both sides out in `disabled, enabled` order, matching `false, true`. An empty `disabled` list writes nothing in the off state, unlike a toggle list which writes zeroed values.
+- `da.puppet_layer(name, { driven_by }, { da.keyframe(t, targets), ... })`.
+    - Compiles to one state holding a 1D linear blend tree, not a motion-time clip: each keyframe becomes a fixed clip placed at threshold `t`, so keyframes are joined with linear interpolation. `driven_by` must be a float, and `t` is any real value rather than normalized time, so a `-1..1` puppet axis is used as is.
+    - A target missing from a keyframe is filled by linearly interpolating its neighbours, and held at the ends. Every generated clip writes the same key set.
+    - Step or `Curve` interpolation is not exposed here; write `da.raw.clip({ time_by }, targets)` for that.
+- `da.blend_layer(name, { da.puppet_layer(...), ... })` merges its children into one layer whose single state is a direct blend tree. Merging is explicit; layers written at the top level always stay separate.
+    - Only layers that have no behaviors and are driven by a float can be merged, which is currently puppet layers only. Group and switch layers would need a float mirror of their parameter and are not accepted.
+    - Each child becomes a direct field weighted by a float animator parameter fixed at `1.0`; the transform adds that parameter and it is not an expression parameter. The layer is Write Defaults on.
+    - Children sum instead of overriding, so a target animated by two children of the same blend layer is an error. Overlap with other layers keeps the usual layer-order override.
+    - The merged layer sits where the `da.blend_layer` is written in `fx_controller`. Drives such as `da.drive_puppet` keep referencing the child layer by name.
 - `exports = { da.gate(name), da.guard(gate, parameter) }`.
 
 #### Raw Layers (`da.raw.*`)
@@ -89,7 +99,7 @@ Lua script
 - `da.raw.state(name, { motion, behaviors }, { outgoing transitions })`.
 - `da.raw.transition([from,] to[, opts], conditions)` with `duration`. `from` is implicit inside a state's child list and required in a layer's child list. Both forms compile to the same flat transition list.
 - State references (`default`, `from`, `to`) accept a name string or a state object. Forward references must be strings.
-- Motions: `da.raw.clip([opts,] targets)` with `speed`, `speed_by`, `time_by`; `da.raw.external(asset[, opts])`; `da.raw.blend_tree({ type, x[, y] }, { da.raw.field(position, motion), ... })` with `type` in `linear`, `simple_2d`, `freeform_2d`, `cartesian_2d`.
+- Motions: `da.raw.clip([opts,] targets)` with `speed`, `speed_by`, `time_by`; `da.raw.external(asset[, opts])`; `da.raw.blend_tree({ type, x[, y] }, { da.raw.field(position, motion), ... })` with `type` in `linear`, `simple_2d`, `freeform_2d`, `cartesian_2d`; `da.raw.blend_tree({ type = "direct" }, { da.raw.weighted(parameter, motion), ... })`. A direct tree accepts only weighted fields and the others only positioned fields.
 - Conditions live under `da.raw.cond`: `zero`, `nonzero`, `eq`, `ne`, `gt`, `lt`. The comparison type comes from the parameter type in the 2nd pass; unsupported combinations such as `eq` on a float are errors.
 
 #### Menu
