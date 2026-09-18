@@ -21,7 +21,7 @@ impl VectorValue {
         }
     }
 
-    pub fn into_animated_value(self) -> AnimatedValue<()> {
+    pub fn into_animated_value<R>(self) -> AnimatedValue<R> {
         match self {
             Self::Two(vector) => AnimatedValue::Vector2(vector),
             Self::Three(vector) => AnimatedValue::Vector3(vector),
@@ -33,7 +33,7 @@ impl VectorValue {
 /// Reads the value written for an animated property.
 ///
 /// Object references do not come through here; they are written with `:material` and `:reference`.
-pub fn animated_value(owner: &'static str, value: &Value) -> LuaResult<AnimatedValue<()>> {
+pub fn animated_value<R>(owner: &'static str, value: &Value) -> LuaResult<AnimatedValue<R>> {
     match value {
         Value::Boolean(written) => Ok(AnimatedValue::Bool(*written)),
         Value::Integer(written) => Ok(AnimatedValue::Int(*written)),
@@ -75,7 +75,7 @@ mod tests {
 
     fn reject(expression: &str) -> String {
         let (_lua, value) = eval(expression);
-        animated_value("da.test", &value).expect_err("value should be rejected").to_string()
+        animated_value::<()>("da.test", &value).expect_err("value should be rejected").to_string()
     }
 
     #[rstest]

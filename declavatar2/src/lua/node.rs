@@ -62,6 +62,12 @@ declare_nodes! {
     /// Entry of the `parameters` block.
     "parameter" => Parameter(decl::parameter::Parameter),
 
+    /// Animated target and the value written for it.
+    "target" => Target(crate::unity::animation::FixedAnimationEntry<crate::core::phase::Declared>),
+
+    /// Explicit asset locator written with `da.asset.*`.
+    "asset" => Asset(crate::unity::external::AssetLocator),
+
     /// Vector written with `da.vec2`, `da.vec3` or `da.vec4`.
     "vector" => Vector(VectorValue),
 

@@ -1,4 +1,5 @@
 pub mod parameter;
+pub mod target;
 
 use std::{collections::BTreeSet, rc::Rc};
 
@@ -44,6 +45,7 @@ fn register_root(lua: &Lua, da: &Table, symbols: &Rc<BTreeSet<String>>) -> LuaRe
     da.set("quat", lua.create_function(quat)?)?;
 
     parameter::register(lua, da)?;
+    target::register(lua, da)?;
 
     Ok(())
 }
