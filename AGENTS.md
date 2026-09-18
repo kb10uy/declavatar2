@@ -39,6 +39,7 @@ Lua script
 
 - Interpreter: Lua 5.4 via mlua.
 - Scripts `require "declavatar"` (conventionally bound to `da`) and end with `return da.avatar(...)`, returning exactly one avatar (like Lua module convention).
+- `da.avatar(blocks)` takes the blocks alone. A declaration carries no name of its own, because the client already knows which asset it is building.
 - Builders are Rust-side mlua functions that return immutable userdata nodes. Invalid construction fails at the call site with the Lua traceback. No getters are exposed until a need arises.
 - Every builder records the caller's chunk and line into `Unresolved.at` so transform errors can point at the script.
 - Argument order: the trailing argument is always the child list; an optional options table precedes it (`da.group_layer(name, opts, children)`, `da.option(name, targets)`). `da.raw.field(position, motion)` and `da.raw.weighted(parameter, motion)` are the exceptions, their trailing argument is a single motion. `da.switch_layer` takes one or two trailing child lists and is the only builder whose options table is required, so its form is decided by argument count alone.
@@ -48,25 +49,53 @@ Lua script
     - `da.flatten(...)` accepts nodes or lists of nodes, expands one level and drops `false`. Appending with `table.insert` is preferred where it reads naturally.
     - `da.map(list, fn)` is provided.
 - Child lists may mix node kinds where noted; the builder sorts them by kind (`da.option` accepts animated targets and `da.drive_*`, `da.raw.layer` accepts states and transitions).
+- Options tables are read by taking the known keys; any key left over is an error, so a typo fails at the call site.
+- When two entries of one child list animate the same target, the later one silently wins. `Animation` is a `ValueSet`, and this is its ordinary overwrite behavior.
 - `da.symbol("NAME")` returns whether the client supplied that symbol; use ordinary Lua control flow for conditional compilation.
 - Repetition is expressed with ordinary Lua functions. Extension helpers such as `tracking_layer` are plain Lua modules (`require "declavatar.ext"`), not host features.
+
+#### Values
+
+- Vectors are written with `da.vec2(x, y)`, `da.vec3(x, y, z)` and `da.vec4(x, y, z, w)`. A plain table of two to four numbers is accepted as well.
+- `da.color(r, g, b, a)` and `da.quat(x, y, z, w)` are required where those types are wanted; a bare table never becomes a color or a quaternion.
+- `da.object(path):rotation(v)` takes Euler angles from a vector and a quaternion from `da.quat`.
+- An integer option such as `da.int { default = ... }` takes a Lua integer only, and `1.5` is an error. A float option takes an integer too and converts it. Blend shape values are always floats.
+
+#### Runtime and Modules
+
+- The state is created without `io`, `os` and `debug`, and `package.searchers` is replaced so that no script can reach the host filesystem on its own.
+- The replacement searchers run in order: preloaded modules (`declavatar`, `declavatar.ext`), the host loader supplied by the client, then the library directories given to the evaluator (`?.lua` and `?/init.lua`). Directory lookup reads files on the Rust side.
+- `declavatar.ext` ships as Lua source embedded into the binary.
+- No memory or instruction limit is imposed. A script that loops forever hangs the caller, at their own risk.
 
 #### Parameters
 
 - `da.bool(name, opts)`, `da.int(name, opts)`, `da.float(name, opts)` with `default`, `scope`, `save`, `width`.
 - Parameter references are plain strings everywhere (`driven_by = "Emote"`).
 - VRChat provided parameters are declared in bulk with `da.provided("VRChat")` inside `parameters`. Referencing one without the declaration is an error, and so is a user parameter whose name collides with a provided one.
+- The group name of `da.provided` matches exactly, case included. An unknown name fails with the accepted names listed.
 
 #### Animated Targets
 
 - Targets come from bound objects instead of a layer-level default mesh:
-    - `da.renderer(path[, type])` with `:shape(name[, value])`, `:material(slot, asset)`, `:property(name, value)`, `:enabled([bool])`.
+    - `da.renderer(path[, type])` with `:shape(name[, value])`, `:material(slot, asset)`, `:property(name, value)`, `:reference(name, asset)`, `:enabled([bool])`.
     - `da.object(path)` with `:active([bool])`, `:position(v)`, `:rotation(v)`, `:scale(v)`.
-    - `da.component(path, type)` with `:enabled([bool])`, `:property(name, value)`.
+    - `da.component(path, type)` with `:enabled([bool])`, `:property(name, value)`, `:reference(name, asset)`.
     - `da.animator_parameter(name, value)` for AAPs.
+- `:property` on a renderer writes a material property (`_Color` and such). A serialized field of the renderer itself is written through `da.component(path, "UnityEngine.SkinnedMeshRenderer"):property(...)`, which is the same path any other component takes.
+- `:reference` writes an object reference field, so its value is an asset rather than a number.
+- The value type of `:property` follows the Lua value: boolean is `Bool`, integer is `Int`, other numbers are `Float`, a vector is `Vector2`/`Vector3`/`Vector4`, `da.color` is `Color` and `da.quat` is `Quaternion`.
 - An omitted value means "full" (`1.0` / `true`); the consuming layer decides what "off" means.
-- A string given to `:material` is `AssetLocator::Named`. `da.asset.guid(...)`, `da.asset.path(...)`, `da.asset.named(type, name)` give explicit locators. There is no assets block; `Externals` collects every reference.
+- A string given to `:material` is `AssetLocator::Named` with the type `UnityEngine.Material`. `da.asset.guid(...)`, `da.asset.path(...)`, `da.asset.named(type, name)` give explicit locators, and `da.asset.named` always takes the type. There is no assets block; `Externals` collects every reference.
 - Tracking control (`da.tracking(mode, targets)`) and parameter drives compile to state behaviors, never to animated values.
+    - `mode` is `"tracking"` or `"animation"`, and a target is `"head"`, `"left_hand"`, `"right_hand"`, `"hip"`, `"left_foot"`, `"right_foot"`, `"left_fingers"`, `"right_fingers"`, `"eyes"` or `"mouth"`.
+
+#### State Behaviors
+
+- Parameter drives and tracking control stay typed, because the transform has to understand them: drives resolve layer references into concrete parameter values.
+- Any other state behavior is carried verbatim by `GenericStateBehavior`, which holds a type name and a tree of `GenericValue` (bool, integer, float, string, list, map). The transform passes it through untouched and the client feeds it to the actual component.
+- A generic payload holds plain data only. Parameter names, object paths and assets are not resolved or interned inside it, so it never takes part in reference checking.
+- The Lua builder for it is not exposed yet; only the data model exists.
 
 #### Layers
 
@@ -98,6 +127,7 @@ Lua script
 - `da.raw.layer(name, { default = state }, { states and/or transitions })`.
 - `da.raw.state(name, { motion, behaviors }, { outgoing transitions })`.
 - `da.raw.transition([from,] to[, opts], conditions)` with `duration`. `from` is implicit inside a state's child list and required in a layer's child list. Both forms compile to the same flat transition list.
+    - Three arguments are ambiguous between `(from, to, conditions)` and `(to, opts, conditions)`. A table in the second position means the options table, a state reference means `to`. The contents of the table are never inspected.
 - State references (`default`, `from`, `to`) accept a name string or a state object. Forward references must be strings.
 - Motions: `da.raw.clip([opts,] targets)` with `speed`, `speed_by`, `time_by`; `da.raw.external(asset[, opts])`; `da.raw.blend_tree({ type, x[, y] }, { da.raw.field(position, motion), ... })` with `type` in `linear`, `simple_2d`, `freeform_2d`, `cartesian_2d`; `da.raw.blend_tree({ type = "direct" }, { da.raw.weighted(parameter, motion), ... })`. A direct tree accepts only weighted fields and the others only positioned fields.
 - Conditions live under `da.raw.cond`: `zero`, `nonzero`, `eq`, `ne`, `gt`, `lt`. The comparison type comes from the parameter type in the 2nd pass; unsupported combinations such as `eq` on a float are errors.
@@ -106,6 +136,7 @@ Lua script
 
 - `da.submenu(name, items)`, `da.toggle(name, drive)`, `da.button(name, drive)`, `da.radial(name, axis)`, two-axis and four-axis puppets.
 - An axis is a parameter name, a `da.drive_puppet(...)`, or `da.axis(target, { positive, negative })` when labels are needed.
+- `da.two_axis(name, { horizontal, vertical })` and `da.four_axis(name, { up, down, left, right })` name their axes rather than ordering them, because four directions in a row read as a puzzle. Every axis is required and an unknown key is an error, as in any options table.
 - Drives: `da.drive_group(layer, option)`, `da.drive_switch(layer[, bool])`, `da.drive_puppet(layer[, value])`, `da.drive_bool(parameter, value)`, `da.drive_int(parameter, value)`, `da.drive_float(parameter, value)`.
 
 ```lua
@@ -114,7 +145,7 @@ local da = require "declavatar"
 local Face = da.renderer("Face")
 local hat = da.symbol("ENABLE_HAT")
 
-return da.avatar("name", {
+return da.avatar({
     parameters = {
         da.provided("VRChat"),
         da.int("Emote", { default = 42 }),
@@ -139,6 +170,15 @@ return da.avatar("name", {
 - Rust side: `rmp-serde` (direct output from serde `Serialize`).
 - C# side: `MessagePack-CSharp` (with Source Generator support).
 - Simplify the C FFI API to a single compile -> MessagePack blob flow.
+
+### External References
+
+- v1 took a `Map<String, Asset>` ScriptableObject as compiler input. v2 reverses that: compilation needs nothing but the script and the symbols, and the resulting avatar enumerates what it requires.
+- `Externals` is that enumeration. Object paths, component types and assets each get an `ExternTable`, deduplicated, and the avatar body refers to them by index. Every entry carries `referenced_at`, so an unmet requirement is reported against the line that asked for it.
+- The client resolves the tables in index order and builds one array per kind, then reads the avatar body straight through it. No second compilation pass is involved.
+- Resolving an asset is the client's job, as is checking that what it found matches the `asset_type` of a `Named` locator.
+- A dictionary ScriptableObject equivalent to v1's is still accepted, as one source of resolutions rather than a compiler input. For `AssetLocator::Named` the dictionary wins, and a project-wide search is used only when it hits exactly one asset.
+- Losing compile-time name checking is the deliberate cost. Reporting a failure at the right script line keeps it manageable.
 
 ## Code Style
 
