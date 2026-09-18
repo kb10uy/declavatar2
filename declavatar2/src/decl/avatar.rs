@@ -6,20 +6,10 @@ use crate::{
 /// Root of a declaration, what one script returns.
 #[derive(Debug, Clone, Default)]
 pub struct Avatar {
-    pub name: String,
     pub parameters: Vec<Parameter>,
     pub fx_controller: Vec<Layer>,
     pub menu: Vec<MenuItem>,
     pub exports: Vec<Export>,
-}
-
-impl Avatar {
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            ..Default::default()
-        }
-    }
 }
 
 /// Entry of the `exports` block.
@@ -74,7 +64,6 @@ mod tests {
 
     fn example_avatar() -> Avatar {
         Avatar {
-            name: "name".into(),
             parameters: vec![
                 Parameter::Provided(ProvidedParameterGroup::Vrchat),
                 Parameter::Primitive(PrimitiveParameter {
@@ -99,6 +88,7 @@ mod tests {
                 Layer::Group(GroupLayer {
                     name: "Expressions".into(),
                     driven_by: Some(Unresolved::new("Emote".into())),
+                    symmetric: None,
                     default: Some(Content {
                         animation: Animation::from([shape("Face", "eyelid_L", 0.3)]),
                         behaviors: vec![],
@@ -139,7 +129,6 @@ mod tests {
     fn example_declaration_is_expressible() {
         let avatar = example_avatar();
 
-        assert_eq!(avatar.name, "name");
         assert_eq!(avatar.parameters.len(), 3);
         assert_eq!(avatar.fx_controller.iter().map(Layer::name).collect::<Vec<_>>(), ["Expressions", "Hat"]);
         assert_eq!(avatar.menu.iter().map(MenuItem::name).collect::<Vec<_>>(), ["Hat"]);

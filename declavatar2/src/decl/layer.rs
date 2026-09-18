@@ -40,6 +40,7 @@ impl Layer {
 pub struct GroupLayer {
     pub name: String,
     pub driven_by: Option<Unresolved<String>>,
+    pub symmetric: Option<bool>,
     pub default: Option<Content>,
     pub options: Vec<GroupOption>,
     pub at: Option<SourceLocation>,

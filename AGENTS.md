@@ -70,9 +70,13 @@ Lua script
 
 #### Layers
 
-- `da.group_layer(name, { driven_by }, { da.default { ... }, da.option(name[, { index }], targets), ... })`.
+- `da.group_layer(name, { driven_by, symmetric }, { da.default { ... }, da.option(name[, { index }], targets), ... })`.
     - Completion is always mutual-zeroed: the default absorbs the zeroed union of every option's keys (`ValueSet::union_fill_as_zero`), then each option inherits the default entries it lacks (`ValueSet::union_from_defaults`). There is no copy mode.
     - A non-zeroable entry (object reference) used by an option but missing from the default is an error.
+    - `symmetric` chooses the state machine shape only; clip contents are the same either way.
+        - `true` (default): every state is equal. Entry fans out to each option on `== index` and falls back to the default state, each option exits on `!= index`, the default state exits on each `== index`. Switching between options never passes through the default state, so its behaviors do not run on the way. Entry transitions cannot have a duration.
+        - `false`: the v1 hub. The default state transitions to each option on `== index`, each option returns to the default state on `!= index`. Every switch passes through the default state for one frame and runs its behaviors; use this when that pass or a transition duration is wanted.
+    - Direct blend tree output is not generated from a group layer. Write `da.raw.state` with `da.raw.blend_tree({ type = "linear" })` for that.
 - `da.switch_layer(name, { driven_by | gate }, children)`.
     - A sequence is a toggle list: on gets the given or full value, off gets the zeroed value. Explicit `false` or zero values in a toggle list are an error.
     - `{ off = { ... }, on = { ... } }` spells both sides out.
