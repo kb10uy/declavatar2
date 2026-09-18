@@ -77,6 +77,24 @@ declare_nodes! {
     /// One keyframe of a puppet layer, written with `da.keyframe`.
     "keyframe" => Keyframe(decl::layer::PuppetKeyframe),
 
+    /// State of a raw layer, with the transitions written inside it.
+    "state" => RawState(crate::lua::api::raw::PendingState),
+
+    /// Transition of a raw layer, whose source may still be implied by a state.
+    "transition" => RawTransition(crate::lua::api::raw::PendingTransition),
+
+    /// What a raw state plays.
+    "motion" => Motion(decl::raw::Motion),
+
+    /// Field of a blend tree placed on its axes.
+    "field" => BlendTreeField(decl::raw::BlendTreeField),
+
+    /// Field of a direct blend tree, weighted by its own parameter.
+    "weighted field" => DirectBlendTreeField(decl::raw::DirectBlendTreeField),
+
+    /// Condition of a raw transition.
+    "condition" => Condition(decl::raw::Condition),
+
     /// Entry of the `exports` block.
     "export" => Export(decl::avatar::Export),
 

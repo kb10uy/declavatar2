@@ -7,6 +7,18 @@ use crate::{
     unity::animation::FixedAnimationEntry,
 };
 
+/// One entry of a list that holds state behaviors, written as a drive or as a behavior.
+pub struct BehaviorItem(pub Behavior);
+
+impl FromLua for BehaviorItem {
+    fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
+        match behavior_from(&value, lua)? {
+            Some(behavior) => Ok(Self(behavior)),
+            None => Err(LuaError::runtime(format!("expected drive or behavior, got {}", node::describe(&value)))),
+        }
+    }
+}
+
 /// One entry of a content list, which mixes animated targets with state behaviors.
 pub enum ContentItem {
     Target(FixedAnimationEntry<Declared>),
@@ -15,13 +27,29 @@ pub enum ContentItem {
 
 impl FromLua for ContentItem {
     fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
-        match &value {
-            Value::UserData(userdata) if userdata.is::<node::Target>() => Ok(Self::Target(node::Target::from_lua(value.clone(), lua)?.0)),
-            Value::UserData(userdata) if userdata.is::<node::Drive>() => Ok(Self::Behavior(Behavior::Drive(node::Drive::from_lua(value.clone(), lua)?.0))),
-            Value::UserData(userdata) if userdata.is::<node::Behavior>() => Ok(Self::Behavior(node::Behavior::from_lua(value.clone(), lua)?.0)),
-            other => Err(LuaError::runtime(format!("expected target, drive or behavior, got {}", node::describe(other)))),
+        if let Value::UserData(userdata) = &value
+            && userdata.is::<node::Target>()
+        {
+            return Ok(Self::Target(node::Target::from_lua(value.clone(), lua)?.0));
+        }
+        match behavior_from(&value, lua)? {
+            Some(behavior) => Ok(Self::Behavior(behavior)),
+            None => Err(LuaError::runtime(format!("expected target, drive or behavior, got {}", node::describe(&value)))),
         }
     }
+}
+
+fn behavior_from(value: &Value, lua: &Lua) -> LuaResult<Option<Behavior>> {
+    let Value::UserData(userdata) = value else {
+        return Ok(None);
+    };
+    if userdata.is::<node::Drive>() {
+        return Ok(Some(Behavior::Drive(node::Drive::from_lua(value.clone(), lua)?.0)));
+    }
+    if userdata.is::<node::Behavior>() {
+        return Ok(Some(node::Behavior::from_lua(value.clone(), lua)?.0));
+    }
+    Ok(None)
 }
 
 /// Reads a list that holds animated targets and state behaviors in any order.
@@ -41,6 +69,11 @@ pub fn content(lua: &Lua, owner: &'static str, written: &Table) -> LuaResult<Con
     }
 
     Ok(Content { animation, behaviors })
+}
+
+/// Reads a list that holds state behaviors only, such as the `behaviors` of a raw state.
+pub fn behaviors(lua: &Lua, owner: &'static str, written: &Table) -> LuaResult<Vec<Behavior>> {
+    Ok(list::collect::<BehaviorItem>(lua, owner, written)?.into_iter().map(|item| item.0).collect())
 }
 
 /// Reads a list that holds animated targets only, such as a puppet keyframe.

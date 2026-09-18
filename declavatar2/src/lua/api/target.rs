@@ -15,9 +15,9 @@ use crate::{
 };
 
 const DEFAULT_RENDERER_TYPE: &str = "UnityEngine.SkinnedMeshRenderer";
-const MATERIAL_TYPE: &str = "UnityEngine.Material";
+pub(crate) const MATERIAL_TYPE: &str = "UnityEngine.Material";
 
-type Reference = Unresolved<AssetLocator>;
+pub(crate) type Reference = Unresolved<AssetLocator>;
 
 pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
     da.set(
@@ -71,7 +71,7 @@ impl UserData for Renderer {
             Ok(this.entry(
                 lua,
                 AnimatedRendererProperty::Material { slot },
-                AnimatedValue::ObjectReference(asset.into_reference(lua)),
+                AnimatedValue::ObjectReference(asset.into_reference(lua, MATERIAL_TYPE)),
             ))
         });
         methods.add_method("property", |lua, this, (name, value): (String, Value)| {
@@ -82,7 +82,7 @@ impl UserData for Renderer {
             Ok(this.entry(
                 lua,
                 AnimatedRendererProperty::MaterialProperty { name },
-                AnimatedValue::ObjectReference(asset.into_reference(lua)),
+                AnimatedValue::ObjectReference(asset.into_reference(lua, MATERIAL_TYPE)),
             ))
         });
     }
@@ -175,7 +175,7 @@ impl UserData for Component {
             Ok(this.entry(
                 lua,
                 AnimatedComponentProperty::Serialized { name },
-                AnimatedValue::ObjectReference(asset.into_reference(lua)),
+                AnimatedValue::ObjectReference(asset.into_reference(lua, MATERIAL_TYPE)),
             ))
         });
     }
@@ -216,16 +216,17 @@ fn asset_table(lua: &Lua) -> LuaResult<Table> {
 }
 
 /// Asset written either as a bare name or as an explicit locator.
-enum AssetArgument {
+pub(crate) enum AssetArgument {
     Named(String),
     Locator(AssetLocator),
 }
 
 impl AssetArgument {
-    fn into_reference(self, lua: &Lua) -> Reference {
+    /// Turns the argument into a reference, giving a bare name the type its position implies.
+    pub(crate) fn into_reference(self, lua: &Lua, bare_type: &str) -> Reference {
         let locator = match self {
             AssetArgument::Named(name) => AssetLocator::Named {
-                asset_type: MATERIAL_TYPE.into(),
+                asset_type: bare_type.into(),
                 name,
             },
             AssetArgument::Locator(locator) => locator,
@@ -251,7 +252,7 @@ fn target(key: AnimatedTarget<Declared>, value: AnimatedValue<Reference>) -> nod
     node::Target(FixedAnimationEntry { key, value })
 }
 
-fn located<T>(lua: &Lua, value: T) -> Unresolved<T> {
+pub(crate) fn located<T>(lua: &Lua, value: T) -> Unresolved<T> {
     match caller_location(lua) {
         Some(at) => Unresolved::located(value, at),
         None => Unresolved::new(value),

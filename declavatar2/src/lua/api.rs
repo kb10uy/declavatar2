@@ -1,6 +1,7 @@
 pub mod behavior;
 pub mod layer;
 pub mod parameter;
+pub mod raw;
 pub mod target;
 
 use std::{collections::BTreeSet, rc::Rc};
@@ -49,6 +50,7 @@ fn register_root(lua: &Lua, da: &Table, symbols: &Rc<BTreeSet<String>>) -> LuaRe
     behavior::register(lua, da)?;
     layer::register(lua, da)?;
     parameter::register(lua, da)?;
+    raw::register(lua, da)?;
     target::register(lua, da)?;
 
     Ok(())
