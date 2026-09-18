@@ -54,6 +54,14 @@ impl Options {
     }
 }
 
+/// Resolves one of a fixed set of names written in a script, naming every accepted one on failure.
+pub fn one_of<T: Copy>(owner: &str, label: &str, written: &str, choices: &[(&str, T)]) -> LuaResult<T> {
+    choices.iter().find(|(name, _)| *name == written).map(|(_, value)| *value).ok_or_else(|| {
+        let accepted = choices.iter().map(|(name, _)| format!("`{name}`")).collect::<Vec<_>>().join(", ");
+        LuaError::runtime(format!("{owner}: {label} `{written}` is not known (accepted are {accepted})"))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use mlua::Lua;

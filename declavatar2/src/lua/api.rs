@@ -1,3 +1,5 @@
+pub mod parameter;
+
 use std::{collections::BTreeSet, rc::Rc};
 
 use mlua::{Function, Lua, Result as LuaResult, Table, Value, Variadic};
@@ -41,18 +43,35 @@ fn register_root(lua: &Lua, da: &Table, symbols: &Rc<BTreeSet<String>>) -> LuaRe
     da.set("color", lua.create_function(color)?)?;
     da.set("quat", lua.create_function(quat)?)?;
 
+    parameter::register(lua, da)?;
+
     Ok(())
 }
 
-fn avatar(_: &Lua, blocks: Option<Table>) -> LuaResult<node::Avatar> {
-    let mut options = Options::new("da.avatar", blocks);
-    let _parameters = options.take::<Table>("parameters")?;
+fn avatar(lua: &Lua, blocks: Option<Table>) -> LuaResult<node::Avatar> {
+    const OWNER: &str = "da.avatar";
+
+    let mut options = Options::new(OWNER, blocks);
+    let parameters = options.take::<Table>("parameters")?;
     let _fx_controller = options.take::<Table>("fx_controller")?;
     let _menu = options.take::<Table>("menu")?;
     let _exports = options.take::<Table>("exports")?;
     options.finish()?;
 
-    Ok(node::Avatar(decl::Avatar::default()))
+    let parameters = block::<node::Parameter, _>(lua, "da.avatar: parameters", parameters)?;
+
+    Ok(node::Avatar(decl::Avatar {
+        parameters,
+        ..decl::Avatar::default()
+    }))
+}
+
+/// Reads one block of `da.avatar`, which is a child list that may be left out entirely.
+fn block<T: mlua::FromLua + Into<U>, U>(lua: &Lua, owner: &'static str, written: Option<Table>) -> LuaResult<Vec<U>> {
+    let Some(written) = written else {
+        return Ok(Vec::new());
+    };
+    Ok(list::collect::<T>(lua, owner, &written)?.into_iter().map(Into::into).collect())
 }
 
 fn flatten(lua: &Lua, values: Variadic<Value>) -> LuaResult<Table> {

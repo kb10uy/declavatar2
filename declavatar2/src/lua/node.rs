@@ -27,6 +27,12 @@ macro_rules! declare_nodes {
                 }
             }
 
+            impl From<$node> for $inner {
+                fn from(node: $node) -> Self {
+                    node.0
+                }
+            }
+
             impl mlua::UserData for $node {
                 fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
                     fields.add_meta_field("__name", $name);
@@ -52,6 +58,9 @@ macro_rules! declare_nodes {
 declare_nodes! {
     /// Avatar that `da.avatar` returns and the script gives back to the host.
     "avatar" => Avatar(decl::Avatar),
+
+    /// Entry of the `parameters` block.
+    "parameter" => Parameter(decl::parameter::Parameter),
 
     /// Vector written with `da.vec2`, `da.vec3` or `da.vec4`.
     "vector" => Vector(VectorValue),

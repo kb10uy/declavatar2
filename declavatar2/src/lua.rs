@@ -35,6 +35,18 @@ pub(crate) mod testing {
         (lua, value)
     }
 
+    /// Evaluates a whole script and takes the avatar it returns.
+    pub(crate) fn avatar(source: &str) -> crate::decl::Avatar {
+        crate::lua::evaluate(source, "avatar.lua", &EvaluateOptions::new()).expect("script should evaluate")
+    }
+
+    /// Evaluates a whole script that is expected to fail, and returns the message.
+    pub(crate) fn avatar_error(source: &str) -> String {
+        crate::lua::evaluate(source, "avatar.lua", &EvaluateOptions::new())
+            .expect_err("script should be rejected")
+            .to_string()
+    }
+
     /// Evaluates one expression that is expected to fail, and returns the message.
     pub(crate) fn eval_error(expression: &str) -> String {
         let lua = state();
