@@ -65,6 +65,12 @@ declare_nodes! {
     /// Animated target and the value written for it.
     "target" => Target(crate::unity::animation::FixedAnimationEntry<crate::core::phase::Declared>),
 
+    /// Parameter drive written with `da.drive_*`.
+    "drive" => Drive(decl::behavior::Drive),
+
+    /// State behavior other than a drive, such as `da.tracking`.
+    "behavior" => Behavior(decl::behavior::Behavior),
+
     /// Explicit asset locator written with `da.asset.*`.
     "asset" => Asset(crate::unity::external::AssetLocator),
 

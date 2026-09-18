@@ -1,3 +1,4 @@
+pub mod behavior;
 pub mod parameter;
 pub mod target;
 
@@ -44,6 +45,7 @@ fn register_root(lua: &Lua, da: &Table, symbols: &Rc<BTreeSet<String>>) -> LuaRe
     da.set("color", lua.create_function(color)?)?;
     da.set("quat", lua.create_function(quat)?)?;
 
+    behavior::register(lua, da)?;
     parameter::register(lua, da)?;
     target::register(lua, da)?;
 
