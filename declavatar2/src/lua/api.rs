@@ -1,5 +1,6 @@
 pub mod behavior;
 pub mod layer;
+pub mod menu;
 pub mod parameter;
 pub mod raw;
 pub mod target;
@@ -49,6 +50,7 @@ fn register_root(lua: &Lua, da: &Table, symbols: &Rc<BTreeSet<String>>) -> LuaRe
 
     behavior::register(lua, da)?;
     layer::register(lua, da)?;
+    menu::register(lua, da)?;
     parameter::register(lua, da)?;
     raw::register(lua, da)?;
     target::register(lua, da)?;
@@ -62,19 +64,20 @@ fn avatar(lua: &Lua, blocks: Option<Table>) -> LuaResult<node::Avatar> {
     let mut options = Options::new(OWNER, blocks);
     let parameters = options.take::<Table>("parameters")?;
     let fx_controller = options.take::<Table>("fx_controller")?;
-    let _menu = options.take::<Table>("menu")?;
+    let menu = options.take::<Table>("menu")?;
     let exports = options.take::<Table>("exports")?;
     options.finish()?;
 
     let parameters = block::<node::Parameter, _>(lua, "da.avatar: parameters", parameters)?;
     let fx_controller = block::<node::Layer, _>(lua, "da.avatar: fx_controller", fx_controller)?;
+    let menu = block::<node::MenuItem, _>(lua, "da.avatar: menu", menu)?;
     let exports = block::<node::Export, _>(lua, "da.avatar: exports", exports)?;
 
     Ok(node::Avatar(decl::Avatar {
         parameters,
         fx_controller,
+        menu,
         exports,
-        ..decl::Avatar::default()
     }))
 }
 

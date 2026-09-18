@@ -77,6 +77,12 @@ declare_nodes! {
     /// One keyframe of a puppet layer, written with `da.keyframe`.
     "keyframe" => Keyframe(decl::layer::PuppetKeyframe),
 
+    /// Entry of the `menu` block.
+    "menu item" => MenuItem(decl::menu::MenuItem),
+
+    /// One axis of a puppet menu item, written with `da.axis`.
+    "axis" => Axis(decl::menu::Axis),
+
     /// State of a raw layer, with the transitions written inside it.
     "state" => RawState(crate::lua::api::raw::PendingState),
 
