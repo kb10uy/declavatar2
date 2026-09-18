@@ -15,3 +15,11 @@ pub enum ScriptError {
     #[error("the script must end with `return da.avatar(...)`, but it returned {found}")]
     NotAnAvatar { found: String },
 }
+
+/// The message of a Lua error without the `runtime error:` prefix, for composing into another one.
+pub(crate) fn plain_message(error: &mlua::Error) -> String {
+    match error {
+        mlua::Error::RuntimeError(message) => message.clone(),
+        other => other.to_string(),
+    }
+}

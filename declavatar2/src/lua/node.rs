@@ -1,11 +1,11 @@
 use mlua::{AnyUserData, Value};
 
-use crate::decl;
+use crate::{decl, lua::value::VectorValue};
 
 /// Declares the userdata wrappers that builders hand back to scripts.
 ///
-/// Each wrapper carries the name a script sees in error messages, so that a value
-/// used in the wrong place is reported by its kind rather than as bare userdata.
+/// Each wrapper carries the name a script sees in error messages, so that a value used in the
+/// wrong place is reported by its kind rather than as bare userdata.
 macro_rules! declare_nodes {
     ($($(#[$meta:meta])* $name:literal => $node:ident($inner:ty)),* $(,)?) => {
         $(
@@ -36,6 +36,15 @@ macro_rules! declare_nodes {
                     methods.add_meta_method("__tostring", |_, _, ()| Ok($name));
                 }
             }
+
+            impl mlua::FromLua for $node {
+                fn from_lua(value: mlua::Value, _: &mlua::Lua) -> mlua::Result<Self> {
+                    match &value {
+                        mlua::Value::UserData(userdata) if userdata.is::<$node>() => Ok(userdata.borrow::<$node>()?.clone()),
+                        other => Err(mlua::Error::runtime(format!("expected {}, got {}", $name, $crate::lua::node::describe(other)))),
+                    }
+                }
+            }
         )*
     };
 }
@@ -43,6 +52,15 @@ macro_rules! declare_nodes {
 declare_nodes! {
     /// Avatar that `da.avatar` returns and the script gives back to the host.
     "avatar" => Avatar(decl::Avatar),
+
+    /// Vector written with `da.vec2`, `da.vec3` or `da.vec4`.
+    "vector" => Vector(VectorValue),
+
+    /// Color written with `da.color`.
+    "color" => Color(nalgebra::Vector4<f64>),
+
+    /// Rotation written with `da.quat`.
+    "quaternion" => Quaternion(nalgebra::UnitQuaternion<f64>),
 }
 
 /// How a value should be named when a builder rejects it.
