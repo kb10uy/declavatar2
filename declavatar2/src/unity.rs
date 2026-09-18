@@ -10,5 +10,5 @@ pub use animator::{
     AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget,
 };
 pub use external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath};
-pub use state::StateBehavior;
+pub use state::{GenericStateBehavior, GenericValue, StateBehavior};
 pub use value::{AnimatedValue, AnimatedValueCast, AnimatedValueType};

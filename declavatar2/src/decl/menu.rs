@@ -1,7 +1,7 @@
 use crate::{core::resolution::Unresolved, decl::behavior::Drive};
 
 /// Entry of the `menu` block.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MenuItem {
     SubMenu { name: String, items: Vec<MenuItem> },
     Toggle { name: String, drive: Drive },
@@ -25,14 +25,14 @@ impl MenuItem {
 }
 
 /// Axes of a two-axis puppet.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TwoAxes {
     pub horizontal: Axis,
     pub vertical: Axis,
 }
 
 /// Axes of a four-axis puppet.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FourAxes {
     pub up: Axis,
     pub down: Axis,
@@ -42,7 +42,7 @@ pub struct FourAxes {
 
 /// One axis of a puppet menu item, with optional labels for its ends.
 /// A four-axis item uses `positive` as the label of its direction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Axis {
     pub target: AxisTarget,
     pub positive: Option<String>,
@@ -60,7 +60,7 @@ impl Axis {
 }
 
 /// What an axis moves.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AxisTarget {
     Parameter(Unresolved<String>),
     Drive(Drive),

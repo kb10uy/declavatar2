@@ -5,7 +5,7 @@ use crate::{
 };
 
 /// Layer written as a state machine.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RawLayer {
     pub name: String,
     pub default_state: Option<Unresolved<String>>,
@@ -18,7 +18,7 @@ pub struct RawLayer {
 }
 
 /// One state of a `RawLayer`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RawState {
     pub name: String,
     pub motion: Option<Motion>,
@@ -27,7 +27,7 @@ pub struct RawState {
 }
 
 /// Transition between two states of a `RawLayer`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RawTransition {
     pub from: Unresolved<String>,
     pub to: Unresolved<String>,
@@ -36,7 +36,7 @@ pub struct RawTransition {
 }
 
 /// What a state plays.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Motion {
     /// Clip generated from the written targets.
     Clip {
@@ -62,7 +62,7 @@ pub struct ClipOptions {
 }
 
 /// Motion that blends its fields.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BlendTree {
     /// Fields placed on one or two parameter axes.
     Parametric(ParametricBlendTree),
@@ -72,7 +72,7 @@ pub enum BlendTree {
 }
 
 /// Blend tree whose fields are placed on one or two parameter axes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParametricBlendTree {
     pub tree_type: BlendTreeType,
     pub x: Unresolved<String>,
@@ -81,7 +81,7 @@ pub struct ParametricBlendTree {
 }
 
 /// Blend tree whose fields are summed with a weight parameter each.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DirectBlendTree {
     pub fields: Vec<DirectBlendTreeField>,
 }
@@ -102,14 +102,14 @@ impl BlendTreeType {
 }
 
 /// One field of a `ParametricBlendTree`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BlendTreeField {
     pub position: [f64; 2],
     pub motion: Motion,
 }
 
 /// One field of a `DirectBlendTree`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DirectBlendTreeField {
     pub weight_by: Unresolved<String>,
     pub motion: Motion,

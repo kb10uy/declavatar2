@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// Entry of the `fx_controller` block.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Layer {
     Group(GroupLayer),
     Switch(SwitchLayer),
@@ -39,7 +39,7 @@ impl Layer {
 }
 
 /// Layer that switches between mutually exclusive options.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GroupLayer {
     pub name: String,
     pub driven_by: Option<Unresolved<String>>,
@@ -50,7 +50,7 @@ pub struct GroupLayer {
 }
 
 /// One option of a `GroupLayer`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GroupOption {
     pub name: String,
     pub content: Content,
@@ -58,7 +58,7 @@ pub struct GroupOption {
 }
 
 /// Layer that has exactly two states.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SwitchLayer {
     pub name: String,
     pub source: Option<SwitchSource>,
@@ -74,7 +74,7 @@ pub enum SwitchSource {
 }
 
 /// How the two states of a `SwitchLayer` are written.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SwitchContent {
     /// Toggle list: the written values are the on state, and the transform zeroes them for the off state.
     Toggle(Content),
@@ -84,7 +84,7 @@ pub enum SwitchContent {
 }
 
 /// Layer that interpolates its targets along a parameter.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PuppetLayer {
     pub name: String,
     pub driven_by: Option<Unresolved<String>>,
@@ -93,14 +93,14 @@ pub struct PuppetLayer {
 }
 
 /// One keyframe of a `PuppetLayer`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PuppetKeyframe {
     pub time: f64,
     pub animation: Animation,
 }
 
 /// Layer that merges its children into one direct blend tree.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BlendLayer {
     pub name: String,
     pub puppets: Vec<PuppetLayer>,

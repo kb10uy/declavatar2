@@ -4,7 +4,7 @@ use crate::{
 };
 
 /// Root of a declaration, what one script returns.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Avatar {
     pub parameters: Vec<Parameter>,
     pub fx_controller: Vec<Layer>,

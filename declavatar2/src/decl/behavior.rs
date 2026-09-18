@@ -1,6 +1,6 @@
 use crate::{
     core::{phase::Declared, resolution::Unresolved, value_set::ValueSet},
-    unity::{animation::FixedAnimationEntry, value::AnimatedValue},
+    unity::{animation::FixedAnimationEntry, state::GenericStateBehavior, value::AnimatedValue},
     vrchat::state_behaviour::TrackingControl,
 };
 
@@ -8,7 +8,7 @@ use crate::{
 pub type Animation = ValueSet<FixedAnimationEntry<Declared>>;
 
 /// What a group option, a switch side, or a raw state holds.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Content {
     pub animation: Animation,
     pub behaviors: Vec<Behavior>,
@@ -21,10 +21,13 @@ impl Content {
 }
 
 /// Non-animation effect attached to a state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Behavior {
     Drive(Drive),
     TrackingControl(TrackingControl),
+
+    /// State behavior of a type declavatar2 does not know about.
+    Generic(GenericStateBehavior),
 }
 
 /// Parameter drive written as `da.drive_*`.
