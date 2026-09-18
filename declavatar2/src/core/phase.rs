@@ -7,7 +7,7 @@ use crate::{
     },
     unity::{
         AnimatedValueType,
-        external::{Asset, ComponentType, ObjectPath},
+        external::{Asset, AssetLocator, ComponentType, ObjectPath},
     },
 };
 
@@ -35,7 +35,7 @@ impl Phase for Declared {
     type ParameterRef = Unresolved<String>;
     type ObjectPath = Unresolved<String>;
     type ComponentType = Unresolved<String>;
-    type ObjectRef = Unresolved<String>;
+    type ObjectRef = Unresolved<AssetLocator>;
 }
 
 /// Phase after the transformer has run. Script-internal references are resolved,

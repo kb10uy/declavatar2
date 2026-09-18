@@ -115,6 +115,9 @@ pub enum AnimatedRendererProperty {
     /// Blend shape value.
     BlendShape { name: String },
 
+    /// Material of the given slot.
+    Material { slot: u32 },
+
     /// Material property value.
     MaterialProperty { name: String },
 
@@ -127,6 +130,7 @@ impl<Ph: Phase> Target for AnimatedRendererTarget<Ph> {
         match self.property {
             AnimatedRendererProperty::Enabled => Some(AnimatedValueType::Bool),
             AnimatedRendererProperty::BlendShape { .. } => Some(AnimatedValueType::Float),
+            AnimatedRendererProperty::Material { .. } => Some(AnimatedValueType::ObjectReference),
             AnimatedRendererProperty::MaterialProperty { .. } | AnimatedRendererProperty::Serialized { .. } => None,
         }
     }
@@ -301,6 +305,14 @@ mod tests {
         AnimatedTarget::Renderer(AnimatedRendererTarget {
             path: "Body",
             renderer_type: "UnityEngine.Renderer".into(),
+            property: AnimatedRendererProperty::Material { slot: 0 },
+        }),
+        Some(AnimatedValueType::ObjectReference),
+    )]
+    #[case(
+        AnimatedTarget::Renderer(AnimatedRendererTarget {
+            path: "Body",
+            renderer_type: "UnityEngine.Renderer".into(),
             property: AnimatedRendererProperty::MaterialProperty {
                 name: "_Color".into(),
             },
@@ -381,6 +393,14 @@ mod tests {
             property: AnimatedRendererProperty::Enabled,
         },
         Some(AnimatedValueType::Bool),
+    )]
+    #[case(
+        AnimatedRendererTarget {
+            path: "Body",
+            renderer_type: "UnityEngine.SkinnedMeshRenderer".into(),
+            property: AnimatedRendererProperty::Material { slot: 2 },
+        },
+        Some(AnimatedValueType::ObjectReference),
     )]
     #[case(
         AnimatedRendererTarget {
