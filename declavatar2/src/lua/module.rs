@@ -111,43 +111,10 @@ pub(crate) fn remove_filesystem_globals(lua: &Lua) -> LuaResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        env,
-        sync::atomic::{AtomicU32, Ordering},
-    };
-
     use rstest::*;
 
     use super::*;
-
-    pub(super) struct TempTree(PathBuf);
-
-    impl TempTree {
-        pub(super) fn new() -> Self {
-            static COUNTER: AtomicU32 = AtomicU32::new(0);
-            let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-            let root = env::temp_dir().join(format!("declavatar2-modules-{}-{unique}", std::process::id()));
-            fs::create_dir_all(&root).expect("temporary tree should be created");
-            Self(root)
-        }
-
-        pub(super) fn write(&self, relative: &str, contents: &str) -> PathBuf {
-            let path = self.0.join(relative);
-            fs::create_dir_all(path.parent().expect("a file has a parent")).expect("directory should be created");
-            fs::write(&path, contents).expect("file should be written");
-            path
-        }
-
-        pub(super) fn path(&self) -> &PathBuf {
-            &self.0
-        }
-    }
-
-    impl Drop for TempTree {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
+    use crate::lua::testing::TempTree;
 
     #[rstest]
     fn a_module_is_read_from_a_plain_file() {
@@ -220,8 +187,7 @@ mod tests {
 mod script_tests {
     use rstest::*;
 
-    use super::tests::TempTree;
-    use crate::lua::{EvaluateOptions, ScriptError, evaluate};
+    use crate::lua::{EvaluateOptions, ScriptError, evaluate, testing::TempTree};
 
     #[rstest]
     fn a_script_requires_a_module_from_the_library_directories() {

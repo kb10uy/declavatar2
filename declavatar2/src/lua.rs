@@ -19,6 +19,38 @@ pub(crate) mod testing {
 
     use crate::lua::{EvaluateOptions, runtime::create_runtime};
 
+    /// Directory tree of Lua modules, removed when the test ends.
+    pub(crate) struct TempTree(std::path::PathBuf);
+
+    impl TempTree {
+        pub(crate) fn new() -> Self {
+            use std::sync::atomic::{AtomicU32, Ordering};
+
+            static COUNTER: AtomicU32 = AtomicU32::new(0);
+            let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let root = std::env::temp_dir().join(format!("declavatar2-modules-{}-{unique}", std::process::id()));
+            std::fs::create_dir_all(&root).expect("temporary tree should be created");
+            Self(root)
+        }
+
+        pub(crate) fn write(&self, relative: &str, contents: &str) -> std::path::PathBuf {
+            let path = self.0.join(relative);
+            std::fs::create_dir_all(path.parent().expect("a file has a parent")).expect("directory should be created");
+            std::fs::write(&path, contents).expect("file should be written");
+            path
+        }
+
+        pub(crate) fn path(&self) -> &std::path::PathBuf {
+            &self.0
+        }
+    }
+
+    impl Drop for TempTree {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     fn state() -> Lua {
         create_runtime(&EvaluateOptions::new()).expect("runtime should be prepared")
     }

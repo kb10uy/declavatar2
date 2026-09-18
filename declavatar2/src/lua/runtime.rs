@@ -60,6 +60,11 @@ pub fn evaluate(source: &str, chunk_name: &str, options: &EvaluateOptions) -> Re
     }
 }
 
+/// Loads the extension helpers, which are plain Lua shipped inside the binary rather than host features.
+fn extension_module(lua: &Lua) -> LuaResult<mlua::Function> {
+    lua.load(include_str!("ext.lua")).set_name(module::chunk_name("declavatar.ext")).into_function()
+}
+
 /// Creates an interpreter that cannot reach the host except through the configured loaders.
 pub(crate) fn create_runtime(options: &EvaluateOptions) -> LuaResult<Lua> {
     let libraries = StdLib::COROUTINE | StdLib::TABLE | StdLib::STRING | StdLib::UTF8 | StdLib::MATH | StdLib::PACKAGE;
@@ -69,6 +74,7 @@ pub(crate) fn create_runtime(options: &EvaluateOptions) -> LuaResult<Lua> {
     module::install_searchers(&lua, &options.loaders)?;
 
     lua.preload_module("declavatar", api::declavatar_module(&lua, &options.symbols)?)?;
+    lua.preload_module("declavatar.ext", extension_module(&lua)?)?;
 
     Ok(lua)
 }
@@ -192,5 +198,69 @@ mod tests {
             return da.avatar()
         "#)
         .expect("script should evaluate");
+    }
+}
+
+#[cfg(test)]
+mod extension_tests {
+    use rstest::*;
+
+    use super::*;
+    use crate::lua::testing::TempTree;
+
+    /// Runs a script that fails unless `expression` builds exactly the list written in `expected`.
+    fn assert_range(expression: &str, expected: &str) {
+        let script = format!(
+            "local da = require 'declavatar'\n\
+             local ext = require 'declavatar.ext'\n\
+             local joined = table.concat({expression}, ',')\n\
+             assert(joined == '{expected}', 'got ' .. joined)\n\
+             return da.avatar()\n"
+        );
+        evaluate(&script, "avatar.lua", &EvaluateOptions::new()).expect("script should evaluate");
+    }
+
+    #[rstest]
+    fn the_extension_module_ships_inside_the_binary() {
+        assert_range("ext.range(1, 4)", "1,2,3,4");
+    }
+
+    #[rstest]
+    fn a_range_counts_down_when_its_step_is_negative() {
+        assert_range("ext.range(3, 1, -1)", "3,2,1");
+    }
+
+    #[rstest]
+    fn a_range_that_never_reaches_its_end_is_empty() {
+        assert_range("ext.range(3, 1)", "");
+    }
+
+    #[rstest]
+    fn a_range_step_must_not_be_zero() {
+        let error = evaluate(
+            "local da = require 'declavatar'\nlocal ext = require 'declavatar.ext'\nreturn da.avatar(#ext.range(1, 2, 0))\n",
+            "avatar.lua",
+            &EvaluateOptions::new(),
+        )
+        .expect_err("the step should be rejected");
+
+        assert!(error.to_string().contains("the step must not be zero"), "{error}");
+    }
+
+    #[rstest]
+    fn the_extension_module_cannot_be_shadowed_by_a_library_directory() {
+        let tree = TempTree::new();
+        tree.write("declavatar/ext.lua", "error('this must never load')");
+        let options = EvaluateOptions::new().library_paths([tree.path()]);
+
+        evaluate(
+            "local da = require 'declavatar'\n\
+             local ext = require 'declavatar.ext'\n\
+             assert(#ext.range(1, 3) == 3, 'the preloaded module should win')\n\
+             return da.avatar()\n",
+            "avatar.lua",
+            &options,
+        )
+        .expect("the preloaded module should win");
     }
 }
