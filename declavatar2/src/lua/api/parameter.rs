@@ -9,13 +9,13 @@ use crate::{
     },
 };
 
-const SCOPES: &[(&str, ParameterScope)] = &[
+pub(crate) const SCOPES: &[(&str, ParameterScope)] = &[
     ("synced", ParameterScope::Synced),
     ("local", ParameterScope::Local),
     ("internal", ParameterScope::Internal),
 ];
 
-const PROVIDED_GROUPS: &[(&str, ProvidedParameterGroup)] = &[("VRChat", ProvidedParameterGroup::Vrchat)];
+pub(crate) const PROVIDED_GROUPS: &[(&str, ProvidedParameterGroup)] = &[("VRChat", ProvidedParameterGroup::Vrchat)];
 
 pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
     da.set("bool", lua.create_function(bool_parameter)?)?;

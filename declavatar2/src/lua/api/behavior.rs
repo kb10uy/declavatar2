@@ -10,9 +10,9 @@ use crate::{
     vrchat::state_behaviour::{TrackingControl, TrackingControlMode, TrackingControlTarget},
 };
 
-const TRACKING_MODES: &[(&str, TrackingControlMode)] = &[("tracking", TrackingControlMode::Tracking), ("animation", TrackingControlMode::Animation)];
+pub(crate) const TRACKING_MODES: &[(&str, TrackingControlMode)] = &[("tracking", TrackingControlMode::Tracking), ("animation", TrackingControlMode::Animation)];
 
-const TRACKING_TARGETS: &[(&str, TrackingControlTarget)] = &[
+pub(crate) const TRACKING_TARGETS: &[(&str, TrackingControlTarget)] = &[
     ("head", TrackingControlTarget::Head),
     ("left_hand", TrackingControlTarget::LeftHand),
     ("right_hand", TrackingControlTarget::RightHand),

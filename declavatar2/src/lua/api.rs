@@ -109,3 +109,171 @@ fn color(_: &Lua, (r, g, b, a): (f64, f64, f64, Option<f64>)) -> LuaResult<node:
 fn quat(_: &Lua, (x, y, z, w): (f64, f64, f64, f64)) -> LuaResult<node::Quaternion> {
     Ok(node::Quaternion(UnitQuaternion::from_quaternion(Quaternion::new(w, x, y, z))))
 }
+
+/// Guards the Lua type definitions against the builders they describe.
+///
+/// The definitions under `lua/types` are what an editor completes from, and nothing at
+/// runtime reads them, so only a test keeps them honest.
+#[cfg(test)]
+mod definition_tests {
+    use std::collections::BTreeSet;
+
+    use mlua::Value;
+    use rstest::*;
+
+    use super::*;
+    use crate::lua::{
+        EvaluateOptions,
+        api::{
+            behavior::{TRACKING_MODES, TRACKING_TARGETS},
+            parameter::{PROVIDED_GROUPS, SCOPES},
+            raw::{DIRECT_TREE_TYPE, PARAMETRIC_TREE_TYPES},
+        },
+        runtime::create_runtime,
+    };
+
+    const DECLAVATAR: &str = include_str!("../../lua/types/declavatar.lua");
+    const EXTENSION: &str = include_str!("../../lua/types/declavatar/ext.lua");
+
+    fn state() -> Lua {
+        create_runtime(&EvaluateOptions::new()).expect("runtime should be prepared")
+    }
+
+    fn module(lua: &Lua, name: &str) -> Table {
+        lua.load(format!("return require '{name}'"))
+            .call(())
+            .unwrap_or_else(|error| panic!("`{name}` should load: {error}"))
+    }
+
+    /// Every function the module holds, named by the path a script writes to reach it.
+    fn registered(table: &Table, prefix: &str) -> BTreeSet<String> {
+        let mut paths = BTreeSet::new();
+        for pair in table.pairs::<String, Value>() {
+            let (key, value) = pair.expect("the module should have string keys");
+            let path = if prefix.is_empty() { key } else { format!("{prefix}.{key}") };
+            match value {
+                Value::Function(_) => {
+                    paths.insert(path);
+                }
+                Value::Table(inner) => paths.extend(registered(&inner, &path)),
+                other => panic!("`{path}` is a {}, which the definitions do not describe", other.type_name()),
+            }
+        }
+        paths
+    }
+
+    /// Every function the definitions declare on the given table.
+    fn documented(source: &str, receiver: &str) -> BTreeSet<String> {
+        let prefix = format!("function {receiver}.");
+        source
+            .lines()
+            .filter_map(|line| line.strip_prefix(&prefix))
+            .filter_map(|rest| rest.split('(').next())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// Every method the definitions declare on the given class.
+    fn documented_methods(source: &str, class: &str) -> BTreeSet<String> {
+        let prefix = format!("function {class}:");
+        source
+            .lines()
+            .filter_map(|line| line.strip_prefix(&prefix))
+            .filter_map(|rest| rest.split('(').next())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The members of an `---@alias` written as a union of string literals.
+    fn documented_alias(source: &str, name: &str) -> BTreeSet<String> {
+        let prefix = format!("---@alias {name} ");
+        let line = source
+            .lines()
+            .find(|line| line.starts_with(&prefix))
+            .unwrap_or_else(|| panic!("the definitions should declare `{name}`"));
+        line[prefix.len()..]
+            .split('|')
+            .map(|member| member.trim().trim_matches('"').to_owned())
+            .collect()
+    }
+
+    fn accepted<T>(choices: &[(&str, T)]) -> BTreeSet<String> {
+        choices.iter().map(|(name, _)| (*name).to_owned()).collect()
+    }
+
+    #[rstest]
+    fn every_builder_has_a_type_definition() {
+        let lua = state();
+        let registered = registered(&module(&lua, "declavatar"), "");
+        let documented = documented(DECLAVATAR, "da");
+
+        let undocumented: Vec<_> = registered.difference(&documented).collect();
+        assert!(undocumented.is_empty(), "builders without a type definition: {undocumented:?}");
+
+        let invented: Vec<_> = documented.difference(&registered).collect();
+        assert!(invented.is_empty(), "type definitions without a builder: {invented:?}");
+    }
+
+    #[rstest]
+    fn every_extension_helper_has_a_type_definition() {
+        let lua = state();
+        let registered = registered(&module(&lua, "declavatar.ext"), "");
+        let documented = documented(EXTENSION, "ext");
+
+        assert_eq!(registered, documented);
+    }
+
+    /// Methods live behind a protected metatable, so this only catches a definition that
+    /// describes a method the runtime does not have, not the other way round.
+    #[rstest]
+    #[case::renderer("da.Renderer", "da.renderer('Body')")]
+    #[case::object("da.Object", "da.object('Hat')")]
+    #[case::component("da.Component", "da.component('Root', 'UnityEngine.Light')")]
+    fn every_documented_method_exists_on_its_bound_object(#[case] class: &str, #[case] constructor: &str) {
+        let class = class.rsplit('.').next().expect("a class name");
+        let methods = documented_methods(DECLAVATAR, class);
+        assert!(!methods.is_empty(), "`{class}` should document some methods");
+
+        let lua = state();
+        for method in methods {
+            let kind: String = lua
+                .load(format!("local da = require 'declavatar'\nreturn type(({constructor}).{method})"))
+                .call(())
+                .unwrap_or_else(|error| panic!("`{class}:{method}` should be reachable: {error}"));
+            assert_eq!(kind, "function", "`{class}:{method}` is documented but the runtime has no such method");
+        }
+    }
+
+    #[rstest]
+    fn the_documented_enumerations_match_what_the_builders_accept() {
+        assert_eq!(documented_alias(DECLAVATAR, "da.Scope"), accepted(SCOPES));
+        assert_eq!(documented_alias(DECLAVATAR, "da.ProvidedGroup"), accepted(PROVIDED_GROUPS));
+        assert_eq!(documented_alias(DECLAVATAR, "da.TrackingMode"), accepted(TRACKING_MODES));
+        assert_eq!(documented_alias(DECLAVATAR, "da.TrackingTarget"), accepted(TRACKING_TARGETS));
+
+        let mut tree_types = accepted(PARAMETRIC_TREE_TYPES);
+        tree_types.insert(DIRECT_TREE_TYPE.to_owned());
+        assert_eq!(documented_alias(DECLAVATAR, "da.BlendTreeType"), tree_types);
+    }
+
+    #[rstest]
+    fn the_definitions_parse_as_lua() {
+        let lua = state();
+        for (name, source) in [("declavatar", DECLAVATAR), ("declavatar.ext", EXTENSION)] {
+            lua.load(source)
+                .set_name(format!("@{name}"))
+                .into_function()
+                .unwrap_or_else(|error| panic!("the definitions of `{name}` should be valid Lua: {error}"));
+        }
+    }
+
+    #[rstest]
+    fn the_definitions_are_declarations_only() {
+        for (name, source) in [("declavatar", DECLAVATAR), ("declavatar.ext", EXTENSION)] {
+            assert!(
+                source.starts_with(&format!("---@meta {name}\n")),
+                "`{name}` should open with its meta annotation so that `require` resolves to it",
+            );
+        }
+    }
+}

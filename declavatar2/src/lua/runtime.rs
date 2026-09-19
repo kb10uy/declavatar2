@@ -62,7 +62,9 @@ pub fn evaluate(source: &str, chunk_name: &str, options: &EvaluateOptions) -> Re
 
 /// Loads the extension helpers, which are plain Lua shipped inside the binary rather than host features.
 fn extension_module(lua: &Lua) -> LuaResult<mlua::Function> {
-    lua.load(include_str!("ext.lua")).set_name(module::chunk_name("declavatar.ext")).into_function()
+    lua.load(include_str!("../../lua/runtime/ext.lua"))
+        .set_name(module::chunk_name("declavatar.ext"))
+        .into_function()
 }
 
 /// Creates an interpreter that cannot reach the host except through the configured loaders.

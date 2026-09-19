@@ -22,14 +22,14 @@ use crate::{
 
 const CLIP_TYPE: &str = "UnityEngine.AnimationClip";
 
-const PARAMETRIC_TREE_TYPES: &[(&str, BlendTreeType)] = &[
+pub(crate) const PARAMETRIC_TREE_TYPES: &[(&str, BlendTreeType)] = &[
     ("linear", BlendTreeType::Linear),
     ("simple_2d", BlendTreeType::Simple2d),
     ("freeform_2d", BlendTreeType::Freeform2d),
     ("cartesian_2d", BlendTreeType::Cartesian2d),
 ];
 
-const DIRECT_TREE_TYPE: &str = "direct";
+pub(crate) const DIRECT_TREE_TYPE: &str = "direct";
 
 pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
     let raw = lua.create_table()?;

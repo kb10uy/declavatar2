@@ -66,6 +66,7 @@ Lua script
 - The state is created without `io`, `os` and `debug`, and `package.searchers` is replaced so that no script can reach the host filesystem on its own.
 - The replacement searchers run in order: preloaded modules (`declavatar`, `declavatar.ext`), the host loader supplied by the client, then the library directories given to the evaluator (`?.lua` and `?/init.lua`). Directory lookup reads files on the Rust side.
 - `declavatar.ext` ships as Lua source embedded into the binary.
+- Lua lives under `declavatar2/lua`, apart from the Rust sources. `runtime/` holds the Lua that is actually run and embedded, and `types/` holds lua-language-server definition files for `declavatar` and `declavatar.ext` so that an editor can complete a script. The definitions carry annotations only; a test compares them against the builders the runtime registers.
 - No memory or instruction limit is imposed. A script that loops forever hangs the caller, at their own risk.
 
 #### Parameters
