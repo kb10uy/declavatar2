@@ -82,12 +82,20 @@ impl<'de, K: ExternKind> Deserialize<'de> for Extern<K> {
 }
 
 /// An entry of `ExternTable`: the value the client should look up, and every place in the script that referenced it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(bound(serialize = "K::Value: Serialize"))]
 pub struct ExternEntry<K: ExternKind> {
     pub value: K::Value,
     pub referenced_at: Vec<SourceLocation>,
 }
+
+impl<K: ExternKind> PartialEq for ExternEntry<K> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value && self.referenced_at == other.referenced_at
+    }
+}
+
+impl<K: ExternKind> Eq for ExternEntry<K> {}
 
 /// Deduplicated table of external references of one kind.
 /// Serialized as the plain list of entries; `Extern` values index into it.
@@ -108,6 +116,14 @@ impl<K: ExternKind> Default for ExternTable<K> {
     }
 }
 
+impl<K: ExternKind> PartialEq for ExternTable<K> {
+    fn eq(&self, other: &Self) -> bool {
+        self.entries == other.entries
+    }
+}
+
+impl<K: ExternKind> Eq for ExternTable<K> {}
+
 impl<K: ExternKind> ExternTable<K> {
     pub fn new() -> Self {
         Self::default()
@@ -123,7 +139,10 @@ impl<K: ExternKind> ExternTable<K> {
             (self.entries.len() - 1) as u32
         });
         if let Some(at) = at {
-            self.entries[index as usize].referenced_at.push(at);
+            let referenced_at = &mut self.entries[index as usize].referenced_at;
+            if !referenced_at.contains(&at) {
+                referenced_at.push(at);
+            }
         }
         Extern { index, _kind: PhantomData }
     }
@@ -181,6 +200,16 @@ mod tests {
         assert_eq!(table.get(hips1).value, "Armature/Hips");
         assert_eq!(table.get(hips1).referenced_at, vec![at(3), at(8)]);
         assert_eq!(table.get(body).referenced_at, vec![at(5)]);
+    }
+
+    #[rstest]
+    fn a_location_is_recorded_once_however_often_it_is_interned() {
+        let mut table = ExternTable::<TestKind>::new();
+        table.intern(Unresolved::located("Body".into(), at(3)));
+        table.intern(Unresolved::located("Body".into(), at(3)));
+        let body = table.intern(Unresolved::located("Body".into(), at(5)));
+
+        assert_eq!(table.get(body).referenced_at, vec![at(3), at(5)]);
     }
 
     #[rstest]

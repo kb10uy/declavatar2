@@ -7,7 +7,7 @@ pub mod value;
 pub use animation::{ClipAttributes, Curve, CurveError, FixedAnimationEntry, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe};
 pub use animator::{
     AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty, AnimatedGameObjectTarget,
-    AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget,
+    AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterType, BlendTreeType,
 };
 pub use external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath};
 pub use state::{GenericStateBehavior, GenericValue, StateBehavior};

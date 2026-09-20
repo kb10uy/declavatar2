@@ -92,7 +92,7 @@ pub enum VrchatProvidedParameter {
     Earmuffs,
     IsOnFriendsList,
     AvatarVersion,
-    IsAnimtorEnabled,
+    IsAnimatorEnabled,
     ScaleModified,
     ScaleFactor,
     ScaleFactorInverse,
@@ -101,6 +101,76 @@ pub enum VrchatProvidedParameter {
 }
 
 impl VrchatProvidedParameter {
+    /// Every provided parameter, in the order VRChat documents them.
+    pub const ALL: &[Self] = &[
+        Self::IsLocal,
+        Self::PreviewMode,
+        Self::Viseme,
+        Self::Voice,
+        Self::GestureLeft,
+        Self::GestureRight,
+        Self::GestureLeftWeight,
+        Self::GestureRightWeight,
+        Self::AngularY,
+        Self::VelocityX,
+        Self::VelocityY,
+        Self::VelocityZ,
+        Self::VelocityMagnitude,
+        Self::Upright,
+        Self::Grounded,
+        Self::Seated,
+        Self::Afk,
+        Self::TrackingType,
+        Self::VrMode,
+        Self::MuteSelf,
+        Self::InStation,
+        Self::Earmuffs,
+        Self::IsOnFriendsList,
+        Self::AvatarVersion,
+        Self::IsAnimatorEnabled,
+        Self::ScaleModified,
+        Self::ScaleFactor,
+        Self::ScaleFactorInverse,
+        Self::EyeHeightAsMeters,
+        Self::EyeHeightAsPercent,
+    ];
+
+    /// The name of the animator parameter VRChat writes this value into.
+    pub fn name(&self) -> &'static str {
+        match self {
+            VrchatProvidedParameter::IsLocal => "IsLocal",
+            VrchatProvidedParameter::PreviewMode => "PreviewMode",
+            VrchatProvidedParameter::Viseme => "Viseme",
+            VrchatProvidedParameter::Voice => "Voice",
+            VrchatProvidedParameter::GestureLeft => "GestureLeft",
+            VrchatProvidedParameter::GestureRight => "GestureRight",
+            VrchatProvidedParameter::GestureLeftWeight => "GestureLeftWeight",
+            VrchatProvidedParameter::GestureRightWeight => "GestureRightWeight",
+            VrchatProvidedParameter::AngularY => "AngularY",
+            VrchatProvidedParameter::VelocityX => "VelocityX",
+            VrchatProvidedParameter::VelocityY => "VelocityY",
+            VrchatProvidedParameter::VelocityZ => "VelocityZ",
+            VrchatProvidedParameter::VelocityMagnitude => "VelocityMagnitude",
+            VrchatProvidedParameter::Upright => "Upright",
+            VrchatProvidedParameter::Grounded => "Grounded",
+            VrchatProvidedParameter::Seated => "Seated",
+            VrchatProvidedParameter::Afk => "AFK",
+            VrchatProvidedParameter::TrackingType => "TrackingType",
+            VrchatProvidedParameter::VrMode => "VRMode",
+            VrchatProvidedParameter::MuteSelf => "MuteSelf",
+            VrchatProvidedParameter::InStation => "InStation",
+            VrchatProvidedParameter::Earmuffs => "Earmuffs",
+            VrchatProvidedParameter::IsOnFriendsList => "IsOnFriendsList",
+            VrchatProvidedParameter::AvatarVersion => "AvatarVersion",
+            VrchatProvidedParameter::IsAnimatorEnabled => "IsAnimatorEnabled",
+            VrchatProvidedParameter::ScaleModified => "ScaleModified",
+            VrchatProvidedParameter::ScaleFactor => "ScaleFactor",
+            VrchatProvidedParameter::ScaleFactorInverse => "ScaleFactorInverse",
+            VrchatProvidedParameter::EyeHeightAsMeters => "EyeHeightAsMeters",
+            VrchatProvidedParameter::EyeHeightAsPercent => "EyeHeightAsPercent",
+        }
+    }
+
     pub fn animated_value_type(&self) -> AnimatedValueType {
         match self {
             VrchatProvidedParameter::IsLocal => AnimatedValueType::Bool,
@@ -127,12 +197,35 @@ impl VrchatProvidedParameter {
             VrchatProvidedParameter::Earmuffs => AnimatedValueType::Bool,
             VrchatProvidedParameter::IsOnFriendsList => AnimatedValueType::Bool,
             VrchatProvidedParameter::AvatarVersion => AnimatedValueType::Int,
-            VrchatProvidedParameter::IsAnimtorEnabled => AnimatedValueType::Bool,
+            VrchatProvidedParameter::IsAnimatorEnabled => AnimatedValueType::Bool,
             VrchatProvidedParameter::ScaleModified => AnimatedValueType::Bool,
             VrchatProvidedParameter::ScaleFactor => AnimatedValueType::Float,
             VrchatProvidedParameter::ScaleFactorInverse => AnimatedValueType::Float,
             VrchatProvidedParameter::EyeHeightAsMeters => AnimatedValueType::Float,
             VrchatProvidedParameter::EyeHeightAsPercent => AnimatedValueType::Float,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    fn every_provided_parameter_is_listed_once() {
+        let mut names: Vec<_> = VrchatProvidedParameter::ALL.iter().map(VrchatProvidedParameter::name).collect();
+        let count = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), count);
+    }
+
+    #[rstest]
+    fn the_name_matches_the_serialized_form() {
+        for parameter in VrchatProvidedParameter::ALL {
+            assert_eq!(rmp_serde::to_vec(parameter).unwrap(), rmp_serde::to_vec(parameter.name()).unwrap());
         }
     }
 }

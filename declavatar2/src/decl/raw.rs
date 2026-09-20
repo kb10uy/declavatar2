@@ -4,6 +4,8 @@ use crate::{
     unity::{external::AssetLocator, value::AnimatedValue},
 };
 
+pub use crate::unity::animator::BlendTreeType;
+
 /// Layer written as a state machine.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawLayer {
@@ -84,21 +86,6 @@ pub struct ParametricBlendTree {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DirectBlendTree {
     pub fields: Vec<DirectBlendTreeField>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BlendTreeType {
-    Linear,
-    Simple2d,
-    Freeform2d,
-    Cartesian2d,
-}
-
-impl BlendTreeType {
-    /// Whether this type blends by two parameters.
-    pub fn is_two_dimensional(&self) -> bool {
-        !matches!(self, BlendTreeType::Linear)
-    }
 }
 
 /// One field of a `ParametricBlendTree`.

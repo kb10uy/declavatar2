@@ -166,17 +166,54 @@ impl<Ph: Phase> Target for AnimatedComponentTarget<Ph> {
 }
 
 /// Represents a parameter of AnimatorControllers.
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnimatorParameter {
     pub name: String,
     pub value_type: AnimatorParameterType,
     pub default_value: Option<f32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub enum AnimatorParameterType {
     Bool,
     Int,
     Float,
+}
+
+impl AnimatorParameterType {
+    /// The animator parameter type that holds values of the given type, if any.
+    pub fn of(value_type: AnimatedValueType) -> Option<Self> {
+        match value_type {
+            AnimatedValueType::Bool => Some(Self::Bool),
+            AnimatedValueType::Int => Some(Self::Int),
+            AnimatedValueType::Float => Some(Self::Float),
+            _ => None,
+        }
+    }
+
+    pub fn animated_value_type(&self) -> AnimatedValueType {
+        match self {
+            Self::Bool => AnimatedValueType::Bool,
+            Self::Int => AnimatedValueType::Int,
+            Self::Float => AnimatedValueType::Float,
+        }
+    }
+}
+
+/// How a blend tree places its fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+pub enum BlendTreeType {
+    Linear,
+    Simple2d,
+    Freeform2d,
+    Cartesian2d,
+}
+
+impl BlendTreeType {
+    /// Whether this type blends by two parameters.
+    pub fn is_two_dimensional(&self) -> bool {
+        !matches!(self, BlendTreeType::Linear)
+    }
 }
 
 impl AnimatorParameter {

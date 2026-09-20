@@ -40,7 +40,7 @@ pub enum AssetLocator {
 }
 
 /// Every external reference table of an avatar.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Externals {
     pub object_paths: ExternTable<ObjectPath>,
     pub component_types: ExternTable<ComponentType>,

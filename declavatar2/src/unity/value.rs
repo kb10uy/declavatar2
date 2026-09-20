@@ -44,6 +44,40 @@ pub enum AnimatedValueCast<R> {
     Incompatible,
 }
 
+impl<R> AnimatedValue<R> {
+    /// Rewrites the object reference, if this value holds one, and keeps every other value as it is.
+    pub fn map_reference<R2>(self, f: impl FnOnce(R) -> R2) -> AnimatedValue<R2> {
+        match self {
+            AnimatedValue::Float(value) => AnimatedValue::Float(value),
+            AnimatedValue::Int(value) => AnimatedValue::Int(value),
+            AnimatedValue::Bool(value) => AnimatedValue::Bool(value),
+            AnimatedValue::Vector2(value) => AnimatedValue::Vector2(value),
+            AnimatedValue::Vector3(value) => AnimatedValue::Vector3(value),
+            AnimatedValue::Vector4(value) => AnimatedValue::Vector4(value),
+            AnimatedValue::Quaternion(value) => AnimatedValue::Quaternion(value),
+            AnimatedValue::Color(value) => AnimatedValue::Color(value),
+            AnimatedValue::ObjectReference(reference) => AnimatedValue::ObjectReference(f(reference)),
+        }
+    }
+
+    /// Linear interpolation between two values of the same interpolable type.
+    /// `None` when either value is not interpolable or the types differ.
+    pub fn lerp(&self, other: &Self, t: f64) -> Option<Self>
+    where
+        R: Clone,
+    {
+        Some(match (self, other) {
+            (AnimatedValue::Float(a), AnimatedValue::Float(b)) => AnimatedValue::Float(a + (b - a) * t),
+            (AnimatedValue::Vector2(a), AnimatedValue::Vector2(b)) => AnimatedValue::Vector2(a.lerp(b, t)),
+            (AnimatedValue::Vector3(a), AnimatedValue::Vector3(b)) => AnimatedValue::Vector3(a.lerp(b, t)),
+            (AnimatedValue::Vector4(a), AnimatedValue::Vector4(b)) => AnimatedValue::Vector4(a.lerp(b, t)),
+            (AnimatedValue::Quaternion(a), AnimatedValue::Quaternion(b)) => AnimatedValue::Quaternion(a.try_slerp(b, t, 1e-9).unwrap_or_else(|| a.nlerp(b, t))),
+            (AnimatedValue::Color(a), AnimatedValue::Color(b)) => AnimatedValue::Color(a.lerp(b, t)),
+            _ => return None,
+        })
+    }
+}
+
 impl<R: Clone> AnimatedValue<R> {
     pub fn value_type(&self) -> AnimatedValueType {
         match self {
@@ -106,6 +140,34 @@ mod tests {
     fn animated_value_reports_its_type(#[case] value: AnimatedValue<()>, #[case] expected: AnimatedValueType) {
         assert_eq!(value.value_type(), expected);
         assert_eq!(value.cast(expected), AnimatedValueCast::Same);
+    }
+
+    #[rstest]
+    #[case::float(AnimatedValue::Float(0.0), AnimatedValue::Float(10.0), Some(AnimatedValue::Float(2.5)))]
+    #[case::vector(AnimatedValue::Vector3([0.0, 0.0, 0.0].into()), AnimatedValue::Vector3([4.0, 8.0, -4.0].into()), Some(AnimatedValue::Vector3([1.0, 2.0, -1.0].into())))]
+    #[case::color(AnimatedValue::Color([0.0, 0.0, 0.0, 1.0].into()), AnimatedValue::Color([1.0, 1.0, 1.0, 1.0].into()), Some(AnimatedValue::Color([0.25, 0.25, 0.25, 1.0].into())))]
+    #[case::int(AnimatedValue::Int(0), AnimatedValue::Int(4), None)]
+    #[case::bool(AnimatedValue::Bool(false), AnimatedValue::Bool(true), None)]
+    #[case::reference(AnimatedValue::ObjectReference(()), AnimatedValue::ObjectReference(()), None)]
+    #[case::mixed(AnimatedValue::Float(0.0), AnimatedValue::Int(4), None)]
+    fn lerp_applies_to_interpolable_values_only(#[case] from: AnimatedValue<()>, #[case] to: AnimatedValue<()>, #[case] expected: Option<AnimatedValue<()>>) {
+        assert_eq!(from.lerp(&to, 0.25), expected);
+    }
+
+    #[rstest]
+    fn lerp_turns_a_quaternion_along_the_shortest_arc() {
+        let from = UnitQuaternion::identity();
+        let to = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), std::f64::consts::FRAC_PI_2);
+        let AnimatedValue::Quaternion(half) = AnimatedValue::<()>::Quaternion(from).lerp(&AnimatedValue::Quaternion(to), 0.5).unwrap() else {
+            panic!("a quaternion should stay a quaternion");
+        };
+        assert!((half.angle() - std::f64::consts::FRAC_PI_4).abs() < 1e-9);
+    }
+
+    #[rstest]
+    fn map_reference_rewrites_the_reference_only() {
+        assert_eq!(AnimatedValue::ObjectReference("a").map_reference(str::len), AnimatedValue::ObjectReference(1));
+        assert_eq!(AnimatedValue::<&str>::Int(3).map_reference(str::len), AnimatedValue::Int(3));
     }
 
     #[rstest]

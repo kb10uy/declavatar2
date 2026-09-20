@@ -39,8 +39,24 @@ impl<E: MaybeZeroableEntry> ValueSet<E> {
         self.entries.insert(entry.key(), entry)
     }
 
+    pub fn get(&self, key: &E::Key) -> Option<&E> {
+        self.entries.get(key)
+    }
+
     pub fn entries(&self) -> impl Iterator<Item = (&E::Key, &E)> {
         self.entries.iter()
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &E::Key> {
+        self.entries.keys()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     /// Unions the entries from `others` into this set, using zeroed values for zeroable entries.

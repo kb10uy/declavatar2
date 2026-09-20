@@ -165,6 +165,27 @@ return da.avatar({
 })
 ```
 
+### Transform
+
+- `transform::transform(&decl::Avatar) -> Result<avatar::Avatar, TransformErrors>`. `declavatar2::compile` runs the interpreter and the transform in one call and is what the FFI wraps.
+- The compiled model lives under `avatar`: `Avatar` holds the expression parameters, an `AnimatorController` (its animator parameters and layers), the menu and `Externals`. It is concrete over `Compiled`, as `decl` is over `Declared`. States and transitions refer to each other by index; a transition source is `Entry` or a state and a target is a state or `Exit`.
+- Every error is collected rather than stopping at the first one. A layer or menu item that fails is dropped and the rest is still checked, so one run reports as much as it can. `TransformError` carries the `SourceLocation` of the reference that failed, falling back to the layer that holds it.
+- Parameters
+    - The animator parameter list is every declared, provided and generated parameter in that order. Expression parameters are the declared ones whose scope is not `internal`; the default scope is `synced` and `save` defaults to `false`. Unspecified bit widths stay `Unspecified`.
+    - Provided parameters are declared with their VRChat names (`AFK`, `VRMode`, ...) and take part in type checks like any other parameter, so a group layer can be driven by `GestureLeft`.
+    - A layer whose `driven_by` is omitted follows the parameter named after the layer. It must be declared like any other.
+    - `da.gate(name)` generates an internal bool animator parameter of that name, and a switch layer with `gate = name` follows it. `da.guard` is rejected as unsupported until its semantics are settled.
+    - A blend layer generates one float parameter `{blend}/{child}` per child, fixed at `1.0`.
+- Layers
+    - Group option indices are `1..n` in the written order, and the default state is index `0`. State names are `Default` and the option names.
+    - A switch layer compiles to `Disabled` and `Enabled` with `Disabled` as the default state and one transition each way (`If` / `IfNot`). A toggle list whose entry cannot be zeroed (an object reference) is an error that asks for both sides.
+    - A puppet layer sorts its keyframes by time and rejects two keyframes at the same time. A target written with different value types across keyframes is an error. Non-interpolable values (bool, int, object reference) that are missing from a keyframe take the previous written value.
+    - Raw layer conditions compile per parameter type: `zero`/`nonzero`/`eq`/`ne` on bool and int, `gt`/`lt` on int and float, anything else is `UnsupportedCondition`. Written values go through `AnimatedValue::cast`, so an int literal against a float parameter is accepted. The default state is the written one, else the first state.
+    - Clip options on the motion of a state become the state's `Playback` (`speed`, `speed_by`, `time_by`). Inside a blend tree only `speed` is meaningful and it becomes the field's speed; `speed_by` and `time_by` there are errors.
+    - No layer gets a transition duration yet; every generated transition has duration `0.0`.
+- Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
+- Not done yet: serialization of the compiled model (`AnimatedValue` and the animator structures do not derive `Serialize`), bit width assignment for `Unspecified` widths, and `da.guard`.
+
 ### Interop Format
 
 - Use **MessagePack** instead of JSON used in v1.
