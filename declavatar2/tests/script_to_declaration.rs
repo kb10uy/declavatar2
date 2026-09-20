@@ -195,3 +195,41 @@ fn a_mistake_is_reported_with_the_line_that_made_it(#[case] expression: &str, #[
     assert!(message.contains(expected), "{message}");
     assert!(message.contains("avatar.lua:3:"), "{message}");
 }
+
+#[rstest]
+#[case::group("da.group_layer", "{ da.default {}, da.option('A', {}) }")]
+#[case::puppet("da.puppet_layer", "{ da.keyframe(0, {}), da.keyframe(1, {}) }")]
+#[case::raw("da.raw.layer", "{ da.raw.state('S') }")]
+fn layer_options_can_be_omitted(#[case] builder: &str, #[case] children: &str, #[values("", "nil, ")] options: &str) {
+    let script = |options: &str| format!("local da = require 'declavatar'\nreturn da.avatar({{ fx_controller = {{ {builder}('L', {options}{children}) }} }})");
+    let explicit = evaluate(&script("{}, "), "avatar.lua", &EvaluateOptions::new()).unwrap();
+    let omitted = evaluate(&script(options), "avatar.lua", &EvaluateOptions::new()).unwrap();
+    assert_eq!(omitted, explicit);
+}
+
+#[rstest]
+fn layer_builders_reject_invalid_argument_lists(
+    #[values("da.group_layer", "da.puppet_layer", "da.raw.layer")] builder: &str,
+    #[values("", ", {}, {}, {}", ", {}, nil", ", false, {}", ", false")] arguments: &str,
+) {
+    let script = format!("local da = require 'declavatar'\nlocal layer = {builder}('L'{arguments})\nreturn da.avatar()");
+    let error = evaluate(&script, "avatar.lua", &EvaluateOptions::new()).unwrap_err().to_string();
+    assert!(error.contains("avatar.lua:2:"), "{error}");
+}
+
+#[rstest]
+#[case::bool_save("da.bool('P', {save = VALUE})")]
+#[case::int_save("da.int('P', {save = VALUE})")]
+#[case::float_save("da.float('P', {save = VALUE})")]
+#[case::symmetric("da.group_layer('L', {symmetric = VALUE}, {})")]
+#[case::renderer_enabled("da.renderer('Body'):enabled(VALUE)")]
+#[case::component_enabled("da.component('Body', 'UnityEngine.Light'):enabled(VALUE)")]
+#[case::active("da.object('Hat'):active(VALUE)")]
+#[case::drive_switch("da.drive_switch('Hat', VALUE)")]
+fn boolean_arguments_reject_other_types(#[case] expression: &str, #[values("'false'", "0", "1.5", "{}", "da.bool('Other')")] value: &str) {
+    let expression = expression.replace("VALUE", value);
+    let script = format!("local da = require 'declavatar'\nlocal node = {expression}\nreturn da.avatar()");
+    let error = evaluate(&script, "avatar.lua", &EvaluateOptions::new()).unwrap_err().to_string();
+    assert!(error.contains("expected a boolean"), "{error}");
+    assert!(error.contains("avatar.lua:2:"), "{error}");
+}

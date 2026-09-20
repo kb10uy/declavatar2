@@ -5,7 +5,7 @@ use mlua::{Error as LuaError, Lua, Result as LuaResult, Table, Value};
 use crate::{
     core::resolution::Unresolved,
     decl::behavior::{Behavior, Drive},
-    lua::{list, location::caller_location, node, options::one_of},
+    lua::{list, location::caller_location, node, options::one_of, value::StrictBoolean},
     unity::value::AnimatedValue,
     vrchat::state_behaviour::{TrackingControl, TrackingControlMode, TrackingControlTarget},
 };
@@ -43,10 +43,10 @@ fn drive_group(lua: &Lua, (layer, option): (String, String)) -> LuaResult<node::
     }))
 }
 
-fn drive_switch(lua: &Lua, (layer, value): (String, Option<bool>)) -> LuaResult<node::Drive> {
+fn drive_switch(lua: &Lua, (layer, value): (String, Option<StrictBoolean>)) -> LuaResult<node::Drive> {
     Ok(node::Drive(Drive::Switch {
         layer: located(lua, layer),
-        value,
+        value: value.map(|value| value.0),
     }))
 }
 

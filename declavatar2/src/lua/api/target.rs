@@ -2,7 +2,11 @@ use mlua::{Error as LuaError, FromLua, Lua, Result as LuaResult, Table, UserData
 
 use crate::{
     core::{phase::Declared, resolution::Unresolved},
-    lua::{location::caller_location, node, value::animated_value},
+    lua::{
+        location::caller_location,
+        node,
+        value::{StrictBoolean, animated_value},
+    },
     unity::{
         animation::FixedAnimationEntry,
         animator::{
@@ -63,8 +67,12 @@ impl UserData for Renderer {
         methods.add_method("shape", |lua, this, (name, value): (String, Option<f64>)| {
             Ok(this.entry(lua, AnimatedRendererProperty::BlendShape { name }, AnimatedValue::Float(value.unwrap_or(1.0))))
         });
-        methods.add_method("enabled", |lua, this, enabled: Option<bool>| {
-            Ok(this.entry(lua, AnimatedRendererProperty::Enabled, AnimatedValue::Bool(enabled.unwrap_or(true))))
+        methods.add_method("enabled", |lua, this, enabled: Option<StrictBoolean>| {
+            Ok(this.entry(
+                lua,
+                AnimatedRendererProperty::Enabled,
+                AnimatedValue::Bool(enabled.map(|value| value.0).unwrap_or(true)),
+            ))
         });
         methods.add_method("material", |lua, this, (slot, asset): (i64, AssetArgument)| {
             let slot = material_slot("da.renderer:material", slot)?;
@@ -78,11 +86,11 @@ impl UserData for Renderer {
             let value = animated_value("da.renderer:property", &value)?;
             Ok(this.entry(lua, AnimatedRendererProperty::MaterialProperty { name }, value))
         });
-        methods.add_method("reference", |lua, this, (name, asset): (String, AssetArgument)| {
+        methods.add_method("reference", |lua, this, (name, asset): (String, node::Asset)| {
             Ok(this.entry(
                 lua,
                 AnimatedRendererProperty::MaterialProperty { name },
-                AnimatedValue::ObjectReference(asset.into_reference(lua, MATERIAL_TYPE)),
+                AnimatedValue::ObjectReference(located(lua, asset.0)),
             ))
         });
     }
@@ -115,8 +123,12 @@ impl UserData for GameObject {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method("__tostring", |_, _, ()| Ok("object"));
 
-        methods.add_method("active", |lua, this, active: Option<bool>| {
-            Ok(this.entry(lua, AnimatedGameObjectProperty::Active, AnimatedValue::Bool(active.unwrap_or(true))))
+        methods.add_method("active", |lua, this, active: Option<StrictBoolean>| {
+            Ok(this.entry(
+                lua,
+                AnimatedGameObjectProperty::Active,
+                AnimatedValue::Bool(active.map(|value| value.0).unwrap_or(true)),
+            ))
         });
         methods.add_method("position", |lua, this, written: Value| {
             let value = vector3("da.object:position", &written)?;
@@ -164,18 +176,22 @@ impl UserData for Component {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method("__tostring", |_, _, ()| Ok("component"));
 
-        methods.add_method("enabled", |lua, this, enabled: Option<bool>| {
-            Ok(this.entry(lua, AnimatedComponentProperty::Enabled, AnimatedValue::Bool(enabled.unwrap_or(true))))
+        methods.add_method("enabled", |lua, this, enabled: Option<StrictBoolean>| {
+            Ok(this.entry(
+                lua,
+                AnimatedComponentProperty::Enabled,
+                AnimatedValue::Bool(enabled.map(|value| value.0).unwrap_or(true)),
+            ))
         });
         methods.add_method("property", |lua, this, (name, written): (String, Value)| {
             let value = animated_value("da.component:property", &written)?;
             Ok(this.entry(lua, AnimatedComponentProperty::Serialized { name }, value))
         });
-        methods.add_method("reference", |lua, this, (name, asset): (String, AssetArgument)| {
+        methods.add_method("reference", |lua, this, (name, asset): (String, node::Asset)| {
             Ok(this.entry(
                 lua,
                 AnimatedComponentProperty::Serialized { name },
-                AnimatedValue::ObjectReference(asset.into_reference(lua, MATERIAL_TYPE)),
+                AnimatedValue::ObjectReference(located(lua, asset.0)),
             ))
         });
     }
@@ -409,6 +425,46 @@ mod tests {
             value_of("da.renderer('Body'):reference('_MainTex', da.asset.guid('abc'))"),
             reference(AssetLocator::Guid("abc".into())),
         );
+    }
+
+    #[rstest]
+    #[case::guid("da.asset.guid('abc')", AssetLocator::Guid("abc".into()))]
+    #[case::path("da.asset.path('Assets/Eye.png')", AssetLocator::Path("Assets/Eye.png".into()))]
+    #[case::named("da.asset.named('UnityEngine.Texture2D', 'Eye')", AssetLocator::Named {
+        asset_type: "UnityEngine.Texture2D".into(), name: "Eye".into()
+    })]
+    fn references_preserve_explicit_locators(
+        #[case] asset: &str,
+        #[case] expected: AssetLocator,
+        #[values("da.renderer('Body')", "da.component('Body', 'ExampleComponent')")] receiver: &str,
+    ) {
+        let value = value_of(&format!("{receiver}:reference('Texture', {asset})"));
+        let AnimatedValue::ObjectReference(actual) = value else {
+            panic!("expected an object reference")
+        };
+        assert_eq!(actual.value, expected);
+        assert_eq!(
+            actual.at,
+            Some(SourceLocation {
+                chunk: "test.lua".into(),
+                line: 2
+            })
+        );
+    }
+
+    #[rstest]
+    fn references_reject_bare_names(#[values("da.renderer('Body')", "da.component('Body', 'ExampleComponent')")] receiver: &str) {
+        let message = eval_error(&format!("{receiver}:reference('Texture', 'Eye')"));
+        assert!(message.contains("expected asset, got string"), "{message}");
+        assert!(message.contains("test.lua:2:"), "{message}");
+    }
+
+    #[rstest]
+    fn boolean_targets_preserve_written_values(
+        #[values("da.renderer('Body'):enabled", "da.component('Body', 'UnityEngine.Light'):enabled", "da.object('Hat'):active")] method: &str,
+        #[values("true", "false", "nil", "")] value: &str,
+    ) {
+        assert_eq!(value_of(&format!("{method}({value})")), AnimatedValue::Bool(value != "false"));
     }
 
     #[rstest]

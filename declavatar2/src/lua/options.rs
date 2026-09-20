@@ -1,4 +1,18 @@
-use mlua::{Error as LuaError, FromLua, Result as LuaResult, Table, Value};
+use mlua::{Error as LuaError, FromLua, Lua, Result as LuaResult, Table, Value, Variadic};
+
+pub(crate) fn with_children(lua: &Lua, owner: &'static str, arguments: Variadic<Value>) -> LuaResult<(Option<Table>, Table)> {
+    let mut arguments = arguments.into_iter();
+    match arguments.len() {
+        1 => Ok((None, Table::from_lua(arguments.next().expect("one argument"), lua)?)),
+        2 => Ok((
+            Option::<Table>::from_lua(arguments.next().expect("two arguments"), lua)?,
+            Table::from_lua(arguments.next().expect("two arguments"), lua)?,
+        )),
+        written => Err(LuaError::runtime(format!(
+            "{owner}: expected a child list with an optional options table before it, but {written} arguments followed the name"
+        ))),
+    }
+}
 
 /// Reader for an options table that rejects any key its builder does not know.
 pub struct Options {

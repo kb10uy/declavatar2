@@ -14,7 +14,7 @@ use crate::{
         content, list,
         location::caller_location,
         node,
-        options::{Options, one_of},
+        options::{Options, one_of, with_children},
         value::animated_value,
     },
     unity::value::AnimatedValue,
@@ -95,9 +95,10 @@ impl FromLua for LayerChild {
     }
 }
 
-fn layer(lua: &Lua, (name, table, children): (String, Option<Table>, Table)) -> LuaResult<node::Layer> {
+fn layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaResult<node::Layer> {
     const OWNER: &str = "da.raw.layer";
 
+    let (table, children) = with_children(lua, OWNER, arguments)?;
     let mut options = Options::new(OWNER, table);
     let default_state = options.take::<StateName>("default")?.map(|state| located(lua, state.0));
     options.finish()?;

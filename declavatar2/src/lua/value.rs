@@ -1,7 +1,18 @@
-use mlua::{Error as LuaError, Result as LuaResult, Table, Value};
+use mlua::{Error as LuaError, FromLua, Lua, Result as LuaResult, Table, Value};
 use nalgebra::{Vector2, Vector3, Vector4};
 
 use crate::{lua::node, unity::value::AnimatedValue};
+
+pub(crate) struct StrictBoolean(pub bool);
+
+impl FromLua for StrictBoolean {
+    fn from_lua(value: Value, _: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::Boolean(value) => Ok(Self(value)),
+            other => Err(LuaError::runtime(format!("expected a boolean, got {}", node::describe(&other)))),
+        }
+    }
+}
 
 /// Vector written with `da.vec2`, `da.vec3` or `da.vec4`, or as a plain table of numbers.
 #[derive(Debug, Clone, Copy, PartialEq)]

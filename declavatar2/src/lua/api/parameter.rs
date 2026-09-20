@@ -6,6 +6,7 @@ use crate::{
         location::caller_location,
         node,
         options::{Options, one_of},
+        value::StrictBoolean,
     },
 };
 
@@ -75,7 +76,7 @@ fn common_options(owner: &'static str, options: &mut Options) -> LuaResult<Commo
         .take::<String>("scope")?
         .map(|written| one_of(owner, "scope", &written, SCOPES))
         .transpose()?;
-    let save = options.take::<bool>("save")?;
+    let save = options.take::<StrictBoolean>("save")?.map(|value| value.0);
     Ok(CommonOptions { scope, save })
 }
 

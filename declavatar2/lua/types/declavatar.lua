@@ -344,7 +344,7 @@ function Renderer:property(name, value) end
 
 --- Material property that holds an object reference, such as a texture.
 ---@param name string
----@param asset da.AssetValue
+---@param asset da.Asset
 ---@return da.Target
 function Renderer:reference(name, asset) end
 
@@ -387,7 +387,7 @@ function Component:property(name, value) end
 
 --- Serialized field that holds an object reference.
 ---@param name string
----@param asset da.AssetValue
+---@param asset da.Asset
 ---@return da.Target
 function Component:reference(name, asset) end
 
@@ -495,6 +495,7 @@ function da.option(name, content) end
 ---@param options da.GroupLayerOptions
 ---@param children da.GroupChildList `da.default` at most once, then `da.option` in order.
 ---@return da.Layer
+---@overload fun(name: string, children: da.GroupChildList): da.Layer
 function da.group_layer(name, options, children) end
 
 --- Layer that has exactly two states.
@@ -521,6 +522,7 @@ function da.keyframe(time, targets) end
 ---@param options da.PuppetLayerOptions
 ---@param keyframes da.KeyframeList
 ---@return da.Layer
+---@overload fun(name: string, keyframes: da.KeyframeList): da.Layer
 function da.puppet_layer(name, options, keyframes) end
 
 --- Merges its children into one layer whose single state is a direct blend tree.
@@ -595,6 +597,7 @@ da.raw = {}
 ---@param options da.RawLayerOptions
 ---@param children da.RawChildList
 ---@return da.Layer
+---@overload fun(name: string, children: da.RawChildList): da.Layer
 function da.raw.layer(name, options, children) end
 
 --- One state of a raw layer. A transition written in `outgoing` leaves this state.

@@ -84,7 +84,7 @@ Lua script
     - `da.component(path, type)` with `:enabled([bool])`, `:property(name, value)`, `:reference(name, asset)`.
     - `da.animator_parameter(name, value)` for AAPs.
 - `:property` on a renderer writes a material property (`_Color` and such). A serialized field of the renderer itself is written through `da.component(path, "UnityEngine.SkinnedMeshRenderer"):property(...)`, which is the same path any other component takes.
-- `:reference` writes an object reference field, so its value is an asset rather than a number.
+- `:reference` writes an object reference field and requires an explicit `da.asset.guid(...)`, `da.asset.path(...)` or `da.asset.named(type, name)` locator. A bare string is rejected because the asset type cannot be inferred.
 - The value type of `:property` follows the Lua value: boolean is `Bool`, integer is `Int`, other numbers are `Float`, a vector is `Vector2`/`Vector3`/`Vector4`, `da.color` is `Color` and `da.quat` is `Quaternion`.
 - An omitted value means "full" (`1.0` / `true`); the consuming layer decides what "off" means.
 - A string given to `:material` is `AssetLocator::Named` with the type `UnityEngine.Material`. `da.asset.guid(...)`, `da.asset.path(...)`, `da.asset.named(type, name)` give explicit locators, and `da.asset.named` always takes the type. There is no assets block; `Externals` collects every reference.

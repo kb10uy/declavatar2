@@ -1,4 +1,4 @@
-use mlua::{Error as LuaError, FromLua, Lua, Result as LuaResult, Table, Value};
+use mlua::{Error as LuaError, FromLua, Lua, Result as LuaResult, Table, Value, Variadic};
 
 use crate::{
     core::resolution::Unresolved,
@@ -7,7 +7,13 @@ use crate::{
         behavior::Content,
         layer::{BlendLayer, GroupLayer, GroupOption, Layer, PuppetKeyframe, PuppetLayer, SwitchContent, SwitchLayer, SwitchSource},
     },
-    lua::{content, list, location::caller_location, node, options::Options},
+    lua::{
+        content, list,
+        location::caller_location,
+        node,
+        options::{Options, with_children},
+        value::StrictBoolean,
+    },
 };
 
 pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
@@ -54,12 +60,13 @@ impl FromLua for GroupChild {
     }
 }
 
-fn group_layer(lua: &Lua, (name, table, children): (String, Option<Table>, Table)) -> LuaResult<node::Layer> {
+fn group_layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaResult<node::Layer> {
     const OWNER: &str = "da.group_layer";
 
+    let (table, children) = with_children(lua, OWNER, arguments)?;
     let mut options = Options::new(OWNER, table);
     let driven_by = options.take::<String>("driven_by")?.map(|parameter| located(lua, parameter));
-    let symmetric = options.take::<bool>("symmetric")?;
+    let symmetric = options.take::<StrictBoolean>("symmetric")?.map(|value| value.0);
     options.finish()?;
 
     let mut default = None;
@@ -146,9 +153,10 @@ fn keyframe(lua: &Lua, (time, targets): (f64, Table)) -> LuaResult<node::Keyfram
     }))
 }
 
-fn puppet_layer(lua: &Lua, (name, table, keyframes): (String, Option<Table>, Table)) -> LuaResult<node::Layer> {
+fn puppet_layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaResult<node::Layer> {
     const OWNER: &str = "da.puppet_layer";
 
+    let (table, keyframes) = with_children(lua, OWNER, arguments)?;
     let mut options = Options::new(OWNER, table);
     let driven_by = options.take::<String>("driven_by")?.map(|parameter| located(lua, parameter));
     options.finish()?;
