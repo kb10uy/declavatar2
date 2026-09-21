@@ -79,6 +79,9 @@ pub enum TransformErrorKind {
     #[error("parameter `{name}` is not declared")]
     UnknownParameter { name: String },
 
+    #[error("integer parameter `{name}` has default {value}, which is outside the i32 range")]
+    ParameterDefaultOutOfRange { name: String, value: i64 },
+
     #[error("parameter `{name}` is {found:?}, but {expected:?} is needed here")]
     ParameterTypeMismatch {
         name: String,

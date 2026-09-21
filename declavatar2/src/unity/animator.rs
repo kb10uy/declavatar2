@@ -191,8 +191,24 @@ pub enum PathMode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimatorParameter {
     pub name: String,
-    pub value_type: AnimatorParameterType,
-    pub default_value: Option<f32>,
+    pub type_default: AnimatorParameterTypeDefault,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AnimatorParameterTypeDefault {
+    Bool(Option<bool>),
+    Int(Option<i32>),
+    Float(Option<f32>),
+}
+
+impl AnimatorParameterTypeDefault {
+    pub fn value_type(&self) -> AnimatorParameterType {
+        match self {
+            Self::Bool(_) => AnimatorParameterType::Bool,
+            Self::Int(_) => AnimatorParameterType::Int,
+            Self::Float(_) => AnimatorParameterType::Float,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -242,24 +258,21 @@ impl AnimatorParameter {
     pub fn create_bool(name: impl Into<String>, default_value: Option<bool>) -> Self {
         Self {
             name: name.into(),
-            value_type: AnimatorParameterType::Bool,
-            default_value: default_value.map(|v| if v { 1.0 } else { 0.0 }),
+            type_default: AnimatorParameterTypeDefault::Bool(default_value),
         }
     }
 
     pub fn create_int(name: impl Into<String>, default_value: Option<i32>) -> Self {
         Self {
             name: name.into(),
-            value_type: AnimatorParameterType::Int,
-            default_value: default_value.map(|v| v as f32),
+            type_default: AnimatorParameterTypeDefault::Int(default_value),
         }
     }
 
     pub fn create_float(name: impl Into<String>, default_value: Option<f32>) -> Self {
         Self {
             name: name.into(),
-            value_type: AnimatorParameterType::Float,
-            default_value,
+            type_default: AnimatorParameterTypeDefault::Float(default_value),
         }
     }
 }
@@ -277,6 +290,23 @@ mod tests {
         },
         unity::external::ObjectPath,
     };
+
+    crate::test_support::enum_cases! {
+        fn typed_parameter_defaults(value: AnimatorParameterTypeDefault) {
+            let parameter = match value {
+                AnimatorParameterTypeDefault::Bool(default) => AnimatorParameter::create_bool("Test", default),
+                AnimatorParameterTypeDefault::Int(default) => AnimatorParameter::create_int("Test", default),
+                AnimatorParameterTypeDefault::Float(default) => AnimatorParameter::create_float("Test", default),
+            };
+            assert_eq!(parameter.type_default, value);
+            assert_eq!(parameter.name, "Test");
+        }
+        cases {
+            bool_default: AnimatorParameterTypeDefault::Bool(_) => AnimatorParameterTypeDefault::Bool(Some(false)),
+            int_default: AnimatorParameterTypeDefault::Int(_) => AnimatorParameterTypeDefault::Int(Some(16_777_217)),
+            float_default: AnimatorParameterTypeDefault::Float(_) => AnimatorParameterTypeDefault::Float(Some(0.25)),
+        }
+    }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     enum TestPhase {}

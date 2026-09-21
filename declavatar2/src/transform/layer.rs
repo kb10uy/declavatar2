@@ -18,7 +18,7 @@ use crate::{
     },
     unity::{
         animation::{FixedAnimationEntry, InlineAnimation},
-        animator::{AnimatedTarget, BlendTreeType},
+        animator::{AnimatedTarget, AnimatorParameterTypeDefault, BlendTreeType},
         external::AssetLocator,
         value::{AnimatedValue, AnimatedValueType},
     },
@@ -274,7 +274,7 @@ fn blend(context: &mut Context, blend: &BlendLayer) -> Result<AnimatorLayer, Tra
 
         let weight_by = context
             .parameters
-            .generate(weight_parameter(&blend.name, &puppet.name), AnimatedValue::Float(1.0))
+            .generate(weight_parameter(&blend.name, &puppet.name), AnimatorParameterTypeDefault::Float(Some(1.0)))
             .map_err(|error| error.or_at(puppet.at.as_ref()))?;
         fields.push(DirectField {
             weight_by,
@@ -839,7 +839,11 @@ mod tests {
             .filter(|parameter| parameter.name.starts_with("Face/"))
             .collect();
         assert_eq!(generated.len(), 2);
-        assert!(generated.iter().all(|parameter| parameter.default_value == Some(1.0)));
+        assert!(
+            generated
+                .iter()
+                .all(|parameter| parameter.type_default == AnimatorParameterTypeDefault::Float(Some(1.0)))
+        );
         assert!(
             context
                 .parameters

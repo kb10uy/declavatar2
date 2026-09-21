@@ -9,9 +9,9 @@ use crate::{
     },
     transform::error::{TransformError, TransformErrorKind},
     unity::{
-        animator::{AnimatorParameter, AnimatorParameterType},
+        animator::{AnimatorParameter, AnimatorParameterTypeDefault},
         external::Externals,
-        value::{AnimatedValue, AnimatedValueType},
+        value::AnimatedValueType,
     },
     vrchat::expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, VrchatProvidedParameter},
 };
@@ -171,7 +171,7 @@ pub(crate) struct ParameterTable {
 #[derive(Debug, Clone, PartialEq)]
 struct ParameterEntry {
     name: String,
-    value_type: AnimatedValueType,
+    type_default: AnimatorParameterTypeDefault,
     source: ParameterSource,
 }
 
@@ -179,27 +179,39 @@ struct ParameterEntry {
 enum ParameterSource {
     Declared(PrimitiveParameter),
     Provided(VrchatProvidedParameter),
-    Generated { default: AnimatedValue<()> },
+    Generated,
 }
 
 impl ParameterTable {
     fn declare(&mut self, parameter: PrimitiveParameter) -> Result<(), TransformError> {
-        let value_type = match parameter.value {
-            PrimitiveParameterValue::Bool { .. } => AnimatedValueType::Bool,
-            PrimitiveParameterValue::Int { .. } => AnimatedValueType::Int,
-            PrimitiveParameterValue::Float { .. } => AnimatedValueType::Float,
-        };
         if let Some(existing) = self.index.get(&parameter.name).map(|&index| &self.entries[index]) {
             let kind = match existing.source {
                 ParameterSource::Provided(_) => TransformErrorKind::ParameterCollidesWithProvided { name: parameter.name.clone() },
                 ParameterSource::Declared(_) => TransformErrorKind::DuplicateParameter { name: parameter.name.clone() },
-                ParameterSource::Generated { .. } => TransformErrorKind::GeneratedParameterCollision { name: parameter.name.clone() },
+                ParameterSource::Generated => TransformErrorKind::GeneratedParameterCollision { name: parameter.name.clone() },
             };
             return Err(kind.at(parameter.at.clone()));
         }
+        let type_default = match parameter.value {
+            PrimitiveParameterValue::Bool { default } => AnimatorParameterTypeDefault::Bool(default),
+            PrimitiveParameterValue::Int { default, .. } => AnimatorParameterTypeDefault::Int(
+                default
+                    .map(|value| {
+                        i32::try_from(value).map_err(|_| {
+                            TransformErrorKind::ParameterDefaultOutOfRange {
+                                name: parameter.name.clone(),
+                                value,
+                            }
+                            .at(parameter.at.clone())
+                        })
+                    })
+                    .transpose()?,
+            ),
+            PrimitiveParameterValue::Float { default, .. } => AnimatorParameterTypeDefault::Float(default.map(|value| value as f32)),
+        };
         self.push(ParameterEntry {
             name: parameter.name.clone(),
-            value_type,
+            type_default,
             source: ParameterSource::Declared(parameter),
         });
         Ok(())
@@ -215,22 +227,27 @@ impl ParameterTable {
         }
         self.push(ParameterEntry {
             name: provided.name().into(),
-            value_type: provided.animated_value_type(),
+            type_default: match provided.animated_value_type() {
+                AnimatedValueType::Bool => AnimatorParameterTypeDefault::Bool(None),
+                AnimatedValueType::Int => AnimatorParameterTypeDefault::Int(None),
+                AnimatedValueType::Float => AnimatorParameterTypeDefault::Float(None),
+                _ => unreachable!("provided parameters hold a bool, an int or a float"),
+            },
             source: ParameterSource::Provided(provided),
         });
         Ok(())
     }
 
     /// Adds an animator-only parameter the transform needs for itself.
-    pub fn generate(&mut self, name: String, default: AnimatedValue<()>) -> Result<ParameterRef, TransformError> {
+    pub fn generate(&mut self, name: String, type_default: AnimatorParameterTypeDefault) -> Result<ParameterRef, TransformError> {
         if self.index.contains_key(&name) {
             return Err(TransformErrorKind::GeneratedParameterCollision { name }.into());
         }
-        let value_type = default.value_type();
+        let value_type = type_default.value_type().animated_value_type();
         self.push(ParameterEntry {
             name: name.clone(),
-            value_type,
-            source: ParameterSource::Generated { default },
+            type_default,
+            source: ParameterSource::Generated,
         });
         Ok(Resolved::new(name, value_type))
     }
@@ -246,7 +263,7 @@ impl ParameterTable {
             .get(&reference.value)
             .map(|&index| &self.entries[index])
             .ok_or_else(|| TransformErrorKind::UnknownParameter { name: reference.value.clone() }.at(reference.at.clone()))?;
-        Ok(Resolved::new(entry.name.clone(), entry.value_type))
+        Ok(Resolved::new(entry.name.clone(), entry.type_default.value_type().animated_value_type()))
     }
 
     pub fn resolve_typed(&self, reference: &Unresolved<String>, expected: AnimatedValueType) -> Result<ParameterRef, TransformError> {
@@ -265,26 +282,9 @@ impl ParameterTable {
     pub fn animator_parameters(&self) -> Vec<AnimatorParameter> {
         self.entries
             .iter()
-            .map(|entry| {
-                let default_value = match &entry.source {
-                    ParameterSource::Declared(declared) => match declared.value {
-                        PrimitiveParameterValue::Bool { default } => default.map(|value| if value { 1.0 } else { 0.0 }),
-                        PrimitiveParameterValue::Int { default, .. } => default.map(|value| value as f32),
-                        PrimitiveParameterValue::Float { default, .. } => default.map(|value| value as f32),
-                    },
-                    ParameterSource::Provided(_) => None,
-                    ParameterSource::Generated { default } => match default {
-                        AnimatedValue::Bool(value) => Some(if *value { 1.0 } else { 0.0 }),
-                        AnimatedValue::Int(value) => Some(*value as f32),
-                        AnimatedValue::Float(value) => Some(*value as f32),
-                        _ => None,
-                    },
-                };
-                AnimatorParameter {
-                    name: entry.name.clone(),
-                    value_type: AnimatorParameterType::of(entry.value_type).expect("every parameter holds a bool, an int or a float"),
-                    default_value,
-                }
+            .map(|entry| AnimatorParameter {
+                name: entry.name.clone(),
+                type_default: entry.type_default,
             })
             .collect()
     }
@@ -293,29 +293,27 @@ impl ParameterTable {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.source {
-                ParameterSource::Declared(declared) => expression_parameter(declared),
+                ParameterSource::Declared(declared) => expression_parameter(declared, entry.type_default),
                 _ => None,
             })
             .collect()
     }
 }
 
-fn expression_parameter(declared: &PrimitiveParameter) -> Option<ExpressionParameter> {
+fn expression_parameter(declared: &PrimitiveParameter, compiled: AnimatorParameterTypeDefault) -> Option<ExpressionParameter> {
     let scope = declared.scope.unwrap_or(ParameterScope::Synced);
     if scope == ParameterScope::Internal {
         return None;
     }
-    let width = |written: Option<u8>| written.map_or(ExpressionParameterWidth::Unspecified, ExpressionParameterWidth::Specified);
-    let type_default = match declared.value {
-        PrimitiveParameterValue::Bool { default } => ExpressionParameterTypeDefault::Bool(default),
-        PrimitiveParameterValue::Int { default, width: w } => ExpressionParameterTypeDefault::Int {
-            width: width(w),
-            default: default.map(|value| value as i32),
-        },
-        PrimitiveParameterValue::Float { default, width: w } => ExpressionParameterTypeDefault::Float {
-            width: width(w),
-            default: default.map(|value| value as f32),
-        },
+    let width = match declared.value {
+        PrimitiveParameterValue::Bool { .. } => None,
+        PrimitiveParameterValue::Int { width, .. } | PrimitiveParameterValue::Float { width, .. } => width,
+    }
+    .map_or(ExpressionParameterWidth::Unspecified, ExpressionParameterWidth::Specified);
+    let type_default = match compiled {
+        AnimatorParameterTypeDefault::Bool(default) => ExpressionParameterTypeDefault::Bool(default),
+        AnimatorParameterTypeDefault::Int(default) => ExpressionParameterTypeDefault::Int { width, default },
+        AnimatorParameterTypeDefault::Float(default) => ExpressionParameterTypeDefault::Float { width, default },
     };
     Some(ExpressionParameter {
         name: declared.name.clone(),

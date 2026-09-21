@@ -6,6 +6,9 @@ pub mod transform;
 pub mod unity;
 pub mod vrchat;
 
+#[cfg(test)]
+mod test_support;
+
 use thiserror::Error;
 
 pub use lua::EvaluateOptions;
