@@ -29,7 +29,7 @@ use rstest::rstest;
 const UPDATE_VARIABLE: &str = "DECLAVATAR2_UPDATE_GOLDEN";
 
 fn golden_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets/interop").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(name)
 }
 
 fn check_golden(name: &str, encoded: &[u8]) -> Vec<u8> {
@@ -225,6 +225,42 @@ fn every_value_kind(refs: &Refs) -> Motion {
                 AnimatedValueType::Int,
             ),
             AnimatedValue::Int(i64::MAX),
+        ),
+        (
+            component(
+                refs.hat,
+                refs.light,
+                AnimatedComponentProperty::Serialized { name: "m_Center".into() },
+                AnimatedValueType::Vector3,
+            ),
+            AnimatedValue::Vector3(Vector3::new(-0.5, 0.0, 2.0)),
+        ),
+        (
+            component(
+                refs.hat,
+                refs.light,
+                AnimatedComponentProperty::Serialized { name: "m_Orientation".into() },
+                AnimatedValueType::Quaternion,
+            ),
+            AnimatedValue::Quaternion(UnitQuaternion::identity()),
+        ),
+        (
+            component(
+                refs.hat,
+                refs.light,
+                AnimatedComponentProperty::Serialized { name: "m_Color".into() },
+                AnimatedValueType::Color,
+            ),
+            AnimatedValue::Color(Vector4::new(1.0, 0.0, 0.5, 0.25)),
+        ),
+        (
+            component(
+                refs.hat,
+                refs.light,
+                AnimatedComponentProperty::Serialized { name: "m_Cookie".into() },
+                AnimatedValueType::ObjectReference,
+            ),
+            AnimatedValue::ObjectReference(refs.material),
         ),
         (
             AnimatedTarget::AnimatorSelf(AnimatedAnimatorTarget {
@@ -648,6 +684,59 @@ fn menu() -> Vec<MenuItem> {
     ]
 }
 
+fn bare_controller(playable: PlayableLayer) -> PlayableController {
+    PlayableController {
+        playable,
+        mode: MergeMode::Append,
+        priority: 0,
+        path_mode: PathMode::Absolute,
+        mask: None,
+        controller: AnimatorController {
+            parameters: vec![],
+            layers: vec![],
+        },
+    }
+}
+
+fn controllers(refs: &Refs) -> Vec<PlayableController> {
+    let mut controllers = vec![
+        PlayableController {
+            playable: PlayableLayer::Fx,
+            mode: MergeMode::Append,
+            priority: 0,
+            path_mode: PathMode::Absolute,
+            mask: None,
+            controller: AnimatorController {
+                parameters: parameters(),
+                layers: fx_layers(refs),
+            },
+        },
+        PlayableController {
+            playable: PlayableLayer::Gesture,
+            mode: MergeMode::Replace,
+            priority: -5,
+            path_mode: PathMode::Relative,
+            mask: Some(refs.mask),
+            controller: AnimatorController {
+                parameters: parameters(),
+                layers: gesture_layers(refs),
+            },
+        },
+    ];
+    controllers.extend(
+        [
+            PlayableLayer::Base,
+            PlayableLayer::Additive,
+            PlayableLayer::Action,
+            PlayableLayer::Sitting,
+            PlayableLayer::TPose,
+            PlayableLayer::IkPose,
+        ]
+        .map(bare_controller),
+    );
+    controllers
+}
+
 fn fixture_avatar() -> Avatar {
     let (externals, refs) = externals();
     Avatar {
@@ -692,30 +781,7 @@ fn fixture_avatar() -> Avatar {
                 synced: false,
             },
         ],
-        controllers: vec![
-            PlayableController {
-                playable: PlayableLayer::Fx,
-                mode: MergeMode::Append,
-                priority: 0,
-                path_mode: PathMode::Absolute,
-                mask: None,
-                controller: AnimatorController {
-                    parameters: parameters(),
-                    layers: fx_layers(&refs),
-                },
-            },
-            PlayableController {
-                playable: PlayableLayer::Gesture,
-                mode: MergeMode::Replace,
-                priority: -5,
-                path_mode: PathMode::Relative,
-                mask: Some(refs.mask),
-                controller: AnimatorController {
-                    parameters: parameters(),
-                    layers: gesture_layers(&refs),
-                },
-            },
-        ],
+        controllers: controllers(&refs),
         menu: menu(),
         externals,
     }

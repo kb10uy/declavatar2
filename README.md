@@ -54,7 +54,7 @@ cargo build -p da2 --release
 
 produces the shared library under `target/release`. The release profile uses fat LTO, and on Windows the C runtime is linked statically, so the DLL needs no redistributable. Tagged releases on GitHub carry prebuilt binaries for Windows x86_64, Linux x86_64 and a universal macOS build together with `da2.h`.
 
-`cargo test` runs the whole suite, including the interop round trips and the golden blobs under `assets/interop`. After changing the FFI surface, regenerate the header with `cargo build -p da2 --features bindings`.
+`cargo test` runs the whole suite, including the interop round trips and the golden blobs under `declavatar2/tests/golden`. After changing the FFI surface, regenerate the header with `cargo build -p da2 --features bindings`.
 
 ## Contributing
 
