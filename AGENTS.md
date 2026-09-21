@@ -32,6 +32,7 @@ Lua script
 - The transform uses two passes.
     1. 1st pass for declaration collection.
     2. 2nd pass for reference resolution and type checks.
+- Shared Unity data structures are generic over `Phase`. `Declared` uses `Unresolved` names and asset locators; `Compiled` uses typed `Resolved` parameter names and `Extern` indices for client-side references. Source locations belong to references and declaration nodes, not to reference identity.
 
 ### Lua API Design
 
@@ -40,6 +41,7 @@ Lua script
 - Interpreter: Lua 5.4 via mlua.
 - Scripts `require "declavatar"` (conventionally bound to `da`) and end with `return da.avatar(...)`, returning exactly one avatar (like Lua module convention).
 - `da.avatar(blocks)` takes the blocks alone. A declaration carries no name of its own, because the client already knows which asset it is building.
+- The avatar blocks are `parameters`, `controllers` and `menu`, all optional. There is no `exports` block or gate/guard feature. Use explicitly declared parameters with `scope = "internal"` for animator-only state, and raw layers for custom conditions and transitions.
 - Builders are Rust-side mlua functions that return immutable userdata nodes. Invalid construction fails at the call site with the Lua traceback. No getters are exposed until a need arises.
 - Every builder records the caller's chunk and line into `Unresolved.at` so transform errors can point at the script.
 - Argument order: the trailing argument is always the child list; an optional options table precedes it (`da.group_layer(name, opts, children)`, `da.option(name, targets)`). `da.raw.field(position, motion)` and `da.raw.weighted(parameter, motion)` are the exceptions, their trailing argument is a single motion. `da.switch_layer` takes one or two trailing child lists and is the only builder whose options table is required, so its form is decided by argument count alone.
@@ -52,26 +54,26 @@ Lua script
 - Options tables are read by taking the known keys; any key left over is an error, so a typo fails at the call site.
 - When two entries of one child list animate the same target, the later one silently wins. `Animation` is a `ValueSet`, and this is its ordinary overwrite behavior.
 - `da.symbol("NAME")` returns whether the client supplied that symbol; use ordinary Lua control flow for conditional compilation.
-- Repetition is expressed with ordinary Lua functions. Extension helpers such as `tracking_layer` are plain Lua modules (`require "declavatar.ext"`), not host features.
+- Repetition is expressed with ordinary Lua functions. Extension helpers belong in plain Lua modules (`require "declavatar.ext"`), not host features. The embedded extension currently provides `range(from, to[, step])`; `tracking_layer` is not implemented.
 
 #### Values
 
 - Vectors are written with `da.vec2(x, y)`, `da.vec3(x, y, z)` and `da.vec4(x, y, z, w)`. A plain table of two to four numbers is accepted as well.
 - `da.color(r, g, b, a)` and `da.quat(x, y, z, w)` are required where those types are wanted; a bare table never becomes a color or a quaternion.
 - `da.object(path):rotation(v)` takes Euler angles from a vector and a quaternion from `da.quat`.
-- An integer option such as `da.int { default = ... }` takes a Lua integer only, and `1.5` is an error. A float option takes an integer too and converts it. Blend shape values are always floats.
+- An integer option such as `da.int("Emote", { default = ... })` takes a Lua integer only, and `1.5` is an error. A float option takes an integer too and converts it. Blend shape values are always floats.
 
 #### Runtime and Modules
 
 - The state is created without `io`, `os` and `debug`, and `package.searchers` is replaced so that no script can reach the host filesystem on its own.
-- The replacement searchers run in order: preloaded modules (`declavatar`, `declavatar.ext`), the host loader supplied by the client, then the library directories given to the evaluator (`?.lua` and `?/init.lua`). Directory lookup reads files on the Rust side.
+- The replacement searchers consult preloaded modules (`declavatar`, `declavatar.ext`) first, then the loaders in the order added to `EvaluateOptions`. Both `loader(...)` and `library_paths(...)` append loaders, so the client chooses their precedence. Directory lookup tries `?.lua` and `?/init.lua` and reads files on the Rust side.
 - `declavatar.ext` ships as Lua source embedded into the binary.
 - Lua lives under `declavatar2/lua`, apart from the Rust sources. `runtime/` holds the Lua that is actually run and embedded, and `types/` holds lua-language-server definition files for `declavatar` and `declavatar.ext` so that an editor can complete a script. The definitions carry annotations only; a test compares them against the builders the runtime registers.
 - No memory or instruction limit is imposed. A script that loops forever hangs the caller, at their own risk.
 
 #### Parameters
 
-- `da.bool(name, opts)`, `da.int(name, opts)`, `da.float(name, opts)` with `default`, `scope`, `save`, `width`.
+- `da.bool(name, opts)`, `da.int(name, opts)`, `da.float(name, opts)` with `default`, `scope`, `save`; `width` is accepted only by int and float parameters.
 - Parameter references are plain strings everywhere (`driven_by = "Emote"`).
 - VRChat provided parameters are declared in bulk with `da.provided("VRChat")` inside `parameters`. Referencing one without the declaration is an error, and so is a user parameter whose name collides with a provided one.
 - The group name of `da.provided` matches exactly, case included. An unknown name fails with the accepted names listed.
@@ -82,7 +84,7 @@ Lua script
     - `da.renderer(path[, type])` with `:shape(name[, value])`, `:material(slot, asset)`, `:property(name, value)`, `:reference(name, asset)`, `:enabled([bool])`.
     - `da.object(path)` with `:active([bool])`, `:position(v)`, `:rotation(v)`, `:scale(v)`.
     - `da.component(path, type)` with `:enabled([bool])`, `:property(name, value)`, `:reference(name, asset)`.
-    - `da.animator_parameter(name, value)` for AAPs.
+    - `da.animator_parameter(name, value)` for AAPs; the referenced animator parameter must exist and have float type.
 - `:property` on a renderer writes a material property (`_Color` and such). A serialized field of the renderer itself is written through `da.component(path, "UnityEngine.SkinnedMeshRenderer"):property(...)`, which is the same path any other component takes.
 - `:reference` writes an object reference field and requires an explicit `da.asset.guid(...)`, `da.asset.path(...)` or `da.asset.named(type, name)` locator. A bare string is rejected because the asset type cannot be inferred.
 - The value type of `:property` follows the Lua value: boolean is `Bool`, integer is `Int`, other numbers are `Float`, a vector is `Vector2`/`Vector3`/`Vector4`, `da.color` is `Color` and `da.quat` is `Quaternion`.
@@ -104,7 +106,7 @@ Lua script
     - `playable` is `"base"`, `"additive"`, `"gesture"`, `"action"`, `"fx"`, `"sitting"`, `"tpose"` or `"ikpose"`. The same playable layer may be written more than once; each entry is applied on its own, so a low-priority base and a high-priority override can sit in one script.
     - The options map onto what a Modular Avatar Merge Animator takes: `mode` is `"append"` (default) or `"replace"`, `priority` is an integer defaulting to `0`, `mask` is an explicit `da.asset.*` locator. Delete Attached Animator, Match Avatar Write Defaults and Relative Path Root are component-side settings and are not written in a script.
     - `path_mode` is `"absolute"` (default) or `"relative"`. Object paths in a relative controller start at a root the client supplies instead of the avatar root. A bound object such as `da.object("Hat")` is only a path, so the same object used from controllers of both modes names two different objects; the transform does not check for that.
-    - Layer names are unique across every controller, because drives such as `da.drive_switch("Hat")` refer to a layer by name alone.
+    - Layer names are unique across every controller, including blend-layer children, because drives such as `da.drive_switch("Hat")` refer to a layer by name alone.
 
 #### Layers
 
@@ -113,9 +115,9 @@ Lua script
     - Completion is always mutual-zeroed: the default absorbs the zeroed union of every option's keys (`ValueSet::union_fill_as_zero`), then each option inherits the default entries it lacks (`ValueSet::union_from_defaults`). There is no copy mode.
     - A non-zeroable entry (object reference) used by an option but missing from the default is an error.
     - `symmetric` chooses the state machine shape only; clip contents are the same either way.
-        - `true` (default): every state is equal. Entry fans out to each option on `== index` and falls back to the default state, each option exits on `!= index`, the default state exits on each `== index`. Switching between options never passes through the default state, so its behaviors do not run on the way. Entry transitions carry no duration; a crossfade is set on the exit transitions and applies to whatever state Entry resolves to, so it is per source state, not per destination.
-        - `false`: the v1 hub. The default state transitions to each option on `== index`, each option returns to the default state on `!= index`. Every switch passes through the default state for one frame and runs its behaviors; use this when that pass or per-transition durations are wanted.
-    - Direct blend tree output is not generated from a group layer. Write `da.raw.state` with `da.raw.blend_tree({ type = "linear" })` for that.
+        - `true` (default): every state is equal. Entry fans out to each option on `== index` and falls back to the default state, each option exits on `!= index`, the default state exits on each `== index`. Switching between options never passes through the default state, so its behaviors do not run on the way. If crossfades are added, they belong on exit transitions and apply to whatever state Entry resolves to, so they are per source state, not per destination. Generated durations are currently zero.
+        - `false`: the v1 hub. The default state transitions to each option on `== index`, each option returns to the default state on `!= index`. Every switch passes through the default state for one frame and runs its behaviors; use this when that pass is wanted. Custom transition durations currently require a raw layer.
+    - Group layers always generate state machines. For blend-tree output, write `da.raw.state` with `da.raw.blend_tree`: `type = "linear"` selects a 1D tree with a float axis, and `type = "direct"` selects fields with individual float weight parameters.
 - `da.switch_layer(name, { driven_by }, enabled)` or `da.switch_layer(name, { driven_by }, disabled, enabled)`.
     - The options table is required (pass `{}` when empty) so that three arguments always mean a toggle list and four always mean both sides. Table shapes are never inspected to tell the forms apart.
     - The three-argument form is a toggle list: on gets the given or full value, off gets the zeroed value. Explicit `false` or zero values in a toggle list are an error.
@@ -123,12 +125,13 @@ Lua script
 - `da.puppet_layer(name, { driven_by }, { da.keyframe(t, targets), ... })`.
     - Compiles to one state holding a 1D linear blend tree, not a motion-time clip: each keyframe becomes a fixed clip placed at threshold `t`, so keyframes are joined with linear interpolation. `driven_by` must be a float, and `t` is any real value rather than normalized time, so a `-1..1` puppet axis is used as is.
     - A target missing from a keyframe is filled by linearly interpolating its neighbours, and held at the ends. Every generated clip writes the same key set.
-    - Step or `Curve` interpolation is not exposed here; write `da.raw.clip({ time_by }, targets)` for that.
+    - Step and Bezier interpolation are not exposed here. `da.raw.clip({ time_by }, targets)` still contains fixed targets; `time_by` controls playback and does not turn the targets into curves. Keyed curves currently exist only in the Rust animation model.
 - `da.blend_layer(name, { da.puppet_layer(...), ... })` merges its children into one layer whose single state is a direct blend tree. Merging is explicit; layers written at the top level always stay separate.
     - Only layers that have no behaviors and are driven by a float can be merged, which is currently puppet layers only. Group and switch layers would need a float mirror of their parameter and are not accepted.
     - Each child becomes a direct field weighted by a float animator parameter fixed at `1.0`; the transform adds that parameter and it is not an expression parameter. The layer is Write Defaults on.
     - Children sum instead of overriding, so a target animated by two children of the same blend layer is an error. Overlap with other layers keeps the usual layer-order override.
     - The merged layer sits where the `da.blend_layer` is written in its controller. Drives such as `da.drive_puppet` keep referencing the child layer by name.
+
 #### Raw Layers (`da.raw.*`)
 
 - `da.raw.layer(name, { default = state }, { states and/or transitions })`.
@@ -175,24 +178,32 @@ return da.avatar({
 
 ### Transform
 
-- `transform::transform(&decl::Avatar) -> Result<avatar::Avatar, TransformErrors>`. `declavatar2::compile` runs the interpreter and the transform in one call and is what the FFI wraps.
+- `transform::transform(&decl::Avatar) -> Result<avatar::Avatar, TransformErrors>`. `declavatar2::compile(source, chunk_name, &EvaluateOptions)` runs the interpreter and the transform in one call, returning `CompileError::Script` or `CompileError::Transform` on failure. This is the entry point the planned FFI will wrap.
 - The compiled model lives under `avatar`: `Avatar` holds the expression parameters, the `PlayableController`s, the menu and `Externals`. It is concrete over `Compiled`, as `decl` is over `Declared`. States and transitions refer to each other by index; a transition source is `Entry` or a state and a target is a state or `Exit`.
 - A `PlayableController` is one `da.controller` in declaration order: its playable layer, `MergeMode`, priority, `PathMode`, the interned mask asset and an `AnimatorController`. An unwritten option takes its default there, not in the declaration. Every controller carries the whole animator parameter list, because a replaced Gesture layer still needs `GestureLeft` and merging by name is harmless.
-- Every error is collected rather than stopping at the first one. A layer or menu item that fails is dropped and the rest is still checked, so one run reports as much as it can. `TransformError` carries the `SourceLocation` of the reference that failed, falling back to the layer that holds it.
+- Errors are accumulated across parameter and layer collection, layer compilation and menu items. Within one failing layer or item, checking may stop at the first error; the remaining layers and items are still checked. Any error makes the whole transform fail, so a partial avatar is never returned. `TransformError` carries the `SourceLocation` of the reference that failed, falling back to the layer that holds it.
 - Parameters
-    - The animator parameter list is every declared, provided and generated parameter in that order. Expression parameters are the declared ones whose scope is not `internal`; the default scope is `synced` and `save` defaults to `false`. Unspecified bit widths stay `Unspecified`.
+    - The animator parameter list follows the `parameters` block order, expanding each provided group in place, then appends generated parameters in compilation order. Expression parameters are the declared ones whose scope is not `internal`; the default scope is `synced` and `save` defaults to `false`. Unspecified bit widths stay `Unspecified`.
     - Provided parameters are declared with their VRChat names (`AFK`, `VRMode`, ...) and take part in type checks like any other parameter, so a group layer can be driven by `GestureLeft`.
-    - A layer whose `driven_by` is omitted follows the parameter named after the layer. It must be declared like any other.
-    - A blend layer generates one float parameter `{blend}/{child}` per child, fixed at `1.0`.
+    - A group, switch or puppet layer whose `driven_by` is omitted follows the parameter named after the layer. The parameter must exist: group requires int, switch requires bool, and puppet requires float. No driver parameter is generated implicitly.
+    - A blend layer generates one float parameter `{blend}/{child}` per child, fixed at `1.0`. A collision with an existing parameter is an error.
 - Layers
     - Group option indices are `1..n` in the written order, and the default state is index `0`. State names are `Default` and the option names.
     - A switch layer compiles to `Disabled` and `Enabled` with `Disabled` as the default state and one transition each way (`If` / `IfNot`). A toggle list whose entry cannot be zeroed (an object reference) is an error that asks for both sides.
     - A puppet layer sorts its keyframes by time and rejects two keyframes at the same time. A target written with different value types across keyframes is an error. Non-interpolable values (bool, int, object reference) that are missing from a keyframe take the previous written value.
     - Raw layer conditions compile per parameter type: `zero`/`nonzero`/`eq`/`ne` on bool and int, `gt`/`lt` on int and float, anything else is `UnsupportedCondition`. Written values go through `AnimatedValue::cast`, so an int literal against a float parameter is accepted. The default state is the written one, else the first state.
     - Clip options on the motion of a state become the state's `Playback` (`speed`, `speed_by`, `time_by`). Inside a blend tree only `speed` is meaningful and it becomes the field's speed; `speed_by` and `time_by` there are errors.
-    - No layer gets a transition duration yet; every generated transition has duration `0.0`.
+    - Group and switch transitions have duration `0.0`. Raw transitions preserve the written `duration`, defaulting to `0.0`.
+    - Write Defaults is on only for the generated state of a blend layer; group, switch, puppet and raw states use off. The raw Lua API does not expose a Write Defaults option.
 - Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
-- Not done yet: serialization of the compiled model (`AnimatedValue` and the animator structures do not derive `Serialize`), and bit width assignment for `Unspecified` widths.
+- Not done yet: serialization of the complete compiled model (`AnimatedValue` and the animator structures do not derive `Serialize`), the C FFI compile/blob API, the Unity client, Lua/declaration support for keyed curves, and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
+
+### Animation Model
+
+- `InlineAnimation` distinguishes fixed clips (`ValueSet<FixedAnimationEntry>`) from keyed clips (`KeyedAnimation`). The declaration model and transform currently generate fixed clips only, including each field of a puppet blend tree.
+- A `Curve` is non-empty and stores the first keyframe separately, then an interpolation and destination keyframe for each segment. Validation requires strictly increasing normalized times in `[0, 1]` and one value type throughout.
+- Segment interpolation is `Constant`, `Linear` or `Bezier`. Constant accepts every value type; linear and Bezier require interpolable values. Bezier uses CSS-style control points with each x coordinate in `[0, 1]`.
+- `ClipAttributes.length` maps normalized time to seconds. Loop time, loop blend and cycle offset are clip attributes; state playback speed and parameter-controlled playback are separate settings.
 
 ### Interop Format
 
@@ -200,6 +211,7 @@ return da.avatar({
 - Rust side: `rmp-serde` (direct output from serde `Serialize`).
 - C# side: `MessagePack-CSharp` (with Source Generator support).
 - Simplify the C FFI API to a single compile -> MessagePack blob flow.
+- These are target interop decisions. `da2/src/lib.rs` is currently empty; no exported compile function or complete avatar MessagePack payload exists yet.
 
 ### External References
 
@@ -215,6 +227,7 @@ return da.avatar({
 
 - Rust edition 2024
 - Avoid comments by default (add comments only when explicitly requested by the user).
+- Keep comparisons with declavatar v1 and migration rationale in this document only. Code, API documentation and test names should describe current behavior without historical comparisons.
 - Utilize rstest features.
 
 ## Build & Test
