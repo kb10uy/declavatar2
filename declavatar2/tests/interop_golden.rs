@@ -23,7 +23,7 @@ use declavatar2::{
         expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
     },
 };
-use nalgebra::{UnitQuaternion, Vector2, Vector3, Vector4};
+use nalgebra::{Quaternion, UnitQuaternion, Vector2, Vector3, Vector4};
 use rstest::rstest;
 
 const UPDATE_VARIABLE: &str = "DECLAVATAR2_UPDATE_GOLDEN";
@@ -176,7 +176,7 @@ fn every_value_kind(refs: &Refs) -> Motion {
         ),
         (
             game_object(refs.hat, AnimatedGameObjectProperty::TransformRotationQuaternion),
-            AnimatedValue::Quaternion(UnitQuaternion::from_axis_angle(&Vector3::y_axis(), std::f64::consts::FRAC_PI_2)),
+            AnimatedValue::Quaternion(UnitQuaternion::new_unchecked(Quaternion::new(0.5, 0.5, 0.5, 0.5))),
         ),
         (
             game_object(refs.hat, AnimatedGameObjectProperty::TransformRotationEuler),
