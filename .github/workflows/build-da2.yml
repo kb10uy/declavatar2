@@ -1,0 +1,55 @@
+name: "Build da2 binaries"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: "Build Windows x86_64"
+    runs-on: "windows-latest"
+    steps:
+      - uses: "actions/checkout@v6"
+      - uses: "actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6" # v1.16.1
+      - shell: "bash"
+        run: |
+          cargo build -p da2 --release
+      - uses: "actions/upload-artifact@v4"
+        with:
+          name: "da2-x86_64-pc-windows-msvc"
+          path: "./target/release/da2.dll"
+
+  build-linux:
+    name: "Build Linux x86_64"
+    runs-on: "ubuntu-22.04"
+    steps:
+      - uses: "actions/checkout@v6"
+      - uses: "actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6" # v1.16.1
+      - shell: "bash"
+        run: |
+          cargo build -p da2 --release
+      - uses: "actions/upload-artifact@v4"
+        with:
+          name: "da2-x86_64-unknown-linux-gnu"
+          path: "./target/release/libda2.so"
+
+  build-macos:
+    name: "Build macOS universal"
+    runs-on: "macos-latest"
+    steps:
+      - uses: "actions/checkout@v6"
+      - uses: "actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6" # v1.16.1
+        with:
+          target: "aarch64-apple-darwin, x86_64-apple-darwin"
+      - shell: "bash"
+        run: |
+          cargo build -p da2 --release --target aarch64-apple-darwin
+          cargo build -p da2 --release --target x86_64-apple-darwin
+          mkdir -p ./target/universal
+          lipo -create \
+            ./target/aarch64-apple-darwin/release/libda2.dylib \
+            ./target/x86_64-apple-darwin/release/libda2.dylib \
+            -output ./target/universal/libda2.dylib
+      - uses: "actions/upload-artifact@v4"
+        with:
+          name: "da2-universal-apple-darwin"
+          path: "./target/universal/libda2.dylib"

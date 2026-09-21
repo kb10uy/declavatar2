@@ -1,0 +1,11 @@
+language = "C"
+include_guard = "DA2_H"
+cpp_compat = true
+documentation_style = "doxy"
+usize_is_size_t = true
+
+[export]
+prefix = ""
+
+[enum]
+rename_variants = "QualifiedScreamingSnakeCase"

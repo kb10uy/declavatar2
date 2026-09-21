@@ -9,8 +9,14 @@ authors = ["kb10uy <kb10uy@kb10uy.org>"]
 edition = "2024"
 
 [workspace.dependencies]
+cbindgen = "0.29.2"
+declavatar2 = { path = "./declavatar2" }
 either = "1.16.0"
 mlua = { version = "0.12.1", features = ["lua54", "vendored"] }
 nalgebra = "0.35.0"
 rstest = "0.26.1"
 thiserror = "2.0.20"
+
+[profile.release]
+lto = "fat"
+strip = "debuginfo"

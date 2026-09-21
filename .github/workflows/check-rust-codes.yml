@@ -17,6 +17,7 @@ jobs:
       - shell: "bash"
         run: |
           cargo clippy --all-features
+          git diff --exit-code -- da2/include/da2.h
 
   test:
     name: "Test"

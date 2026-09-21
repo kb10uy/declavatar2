@@ -34,6 +34,7 @@ Thanks for contributing to declavatar2!
 
 - Add unit tests for parser/transform behavior changes.
 - For interop format changes, add or update a round-trip test, regenerate the golden blob, and bump the matching version in `assets/interop-format.md`.
+- For C FFI changes, regenerate `da2/include/da2.h` with `cargo build -p da2 --features bindings` and update `assets/c-ffi.md`.
 
 ## Security and Safety
 

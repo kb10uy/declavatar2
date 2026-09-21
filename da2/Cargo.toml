@@ -5,4 +5,17 @@ description.workspace = true
 authors.workspace = true
 edition.workspace = true
 
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+bindings = ["dep:cbindgen"]
+
 [dependencies]
+declavatar2 = { workspace = true }
+
+[build-dependencies]
+cbindgen = { workspace = true, optional = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
