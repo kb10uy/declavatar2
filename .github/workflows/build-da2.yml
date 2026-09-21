@@ -1,6 +1,9 @@
 name: "Build da2 binaries"
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
 
 jobs:
@@ -53,3 +56,30 @@ jobs:
         with:
           name: "da2-universal-apple-darwin"
           path: "./target/universal/libda2.dylib"
+
+  release:
+    name: "Publish GitHub Release"
+    if: "startsWith(github.ref, 'refs/tags/v')"
+    needs:
+      - "build-windows"
+      - "build-linux"
+      - "build-macos"
+    runs-on: "ubuntu-latest"
+    permissions:
+      contents: "write"
+    steps:
+      - uses: "actions/checkout@v6"
+      - uses: "actions/download-artifact@v4"
+        with:
+          path: "./dist"
+      - shell: "bash"
+        run: |
+          mkdir -p ./release
+          cp ./dist/da2-x86_64-pc-windows-msvc/da2.dll ./release/da2-x86_64-pc-windows-msvc.dll
+          cp ./dist/da2-x86_64-unknown-linux-gnu/libda2.so ./release/libda2-x86_64-unknown-linux-gnu.so
+          cp ./dist/da2-universal-apple-darwin/libda2.dylib ./release/libda2-universal-apple-darwin.dylib
+          cp ./da2/include/da2.h ./release/da2.h
+      - uses: "softprops/action-gh-release@v2"
+        with:
+          files: "./release/*"
+          generate_release_notes: true
