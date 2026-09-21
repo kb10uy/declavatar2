@@ -142,7 +142,7 @@ mod tests {
         let message = message(error);
 
         assert!(message.contains("da.avatar: unknown option `fx_controller`"), "{message}");
-        assert!(message.contains("known options are parameters, controllers, menu, exports"), "{message}");
+        assert!(message.contains("known options are parameters, controllers, menu"), "{message}");
         assert!(message.contains("avatar.lua:2:"), "{message}");
     }
 

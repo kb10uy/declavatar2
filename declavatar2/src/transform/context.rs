@@ -4,8 +4,7 @@ use crate::{
     avatar::controller::ParameterRef,
     core::resolution::{Resolved, SourceLocation, Unresolved},
     decl::{
-        avatar::Export,
-        layer::{Layer, SwitchLayer, SwitchSource},
+        layer::Layer,
         parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup},
     },
     transform::error::{TransformError, TransformErrorKind},
@@ -21,7 +20,6 @@ use crate::{
 pub(crate) struct Context {
     pub parameters: ParameterTable,
     pub layers: BTreeMap<String, LayerInfo>,
-    pub gates: BTreeMap<String, Option<SourceLocation>>,
     pub externals: Externals,
 }
 
@@ -31,18 +29,12 @@ impl Context {
         let mut context = Self {
             parameters: ParameterTable::default(),
             layers: BTreeMap::new(),
-            gates: BTreeMap::new(),
             externals: Externals::default(),
         };
         let mut errors = Vec::new();
 
         for parameter in &declaration.parameters {
             if let Err(error) = context.collect_parameter(parameter) {
-                errors.push(error);
-            }
-        }
-        for export in &declaration.exports {
-            if let Err(error) = context.collect_export(export) {
                 errors.push(error);
             }
         }
@@ -71,25 +63,6 @@ impl Context {
         }
     }
 
-    fn collect_export(&mut self, export: &Export) -> Result<(), TransformError> {
-        match export {
-            Export::Gate { name, at } => {
-                if self.gates.contains_key(name) {
-                    return Err(TransformErrorKind::DuplicateGate { name: name.clone() }.at(at.clone()));
-                }
-                if self.parameters.contains(name) {
-                    return Err(TransformErrorKind::GateCollidesWithParameter { name: name.clone() }.at(at.clone()));
-                }
-                self.gates.insert(name.clone(), at.clone());
-                self.parameters
-                    .generate(name.clone(), AnimatedValue::Bool(false))
-                    .map_err(|error| error.or_at(at.as_ref()))?;
-                Ok(())
-            }
-            Export::Guard { gate, .. } => Err(TransformErrorKind::Unsupported { feature: "`da.guard`" }.at(gate.at.clone())),
-        }
-    }
-
     fn collect_layer(&mut self, layer: &Layer) -> Result<(), TransformError> {
         let info = match layer {
             Layer::Group(group) => {
@@ -108,7 +81,9 @@ impl Context {
                     options,
                 }
             }
-            Layer::Switch(switch) => LayerInfo::Switch { source: switch_driver(switch) },
+            Layer::Switch(switch) => LayerInfo::Switch {
+                parameter: driver(switch.driven_by.as_ref(), &switch.name, switch.at.as_ref()),
+            },
             Layer::Puppet(puppet) => LayerInfo::Puppet {
                 parameter: driver(puppet.driven_by.as_ref(), &puppet.name, puppet.at.as_ref()),
             },
@@ -143,19 +118,6 @@ impl Context {
             .get(&reference.value)
             .ok_or_else(|| TransformErrorKind::UnknownLayer { name: reference.value.clone() }.at(reference.at.clone()))
     }
-
-    /// The bool parameter a switch layer follows, whether it was written as a parameter or as a gate.
-    pub fn switch_parameter(&self, source: &SwitchDriver) -> Result<ParameterRef, TransformError> {
-        match source {
-            SwitchDriver::Parameter(parameter) => self.parameters.resolve_typed(parameter, AnimatedValueType::Bool),
-            SwitchDriver::Gate(gate) => {
-                if !self.gates.contains_key(&gate.value) {
-                    return Err(TransformErrorKind::UnknownGate { name: gate.value.clone() }.at(gate.at.clone()));
-                }
-                self.parameters.resolve_typed(gate, AnimatedValueType::Bool)
-            }
-        }
-    }
 }
 
 /// The parameter a layer follows: what `driven_by` names, or the layer's own name when it is omitted.
@@ -169,15 +131,6 @@ pub(crate) fn driver(written: Option<&Unresolved<String>>, layer_name: &str, at:
     }
 }
 
-/// What a switch layer follows: its written source, or a parameter named after the layer when it is omitted.
-pub(crate) fn switch_driver(switch: &SwitchLayer) -> SwitchDriver {
-    match &switch.source {
-        Some(SwitchSource::Parameter(parameter)) => SwitchDriver::Parameter(parameter.clone()),
-        Some(SwitchSource::Gate(gate)) => SwitchDriver::Gate(gate.clone()),
-        None => SwitchDriver::Parameter(driver(None, &switch.name, switch.at.as_ref())),
-    }
-}
-
 /// What the 1st pass knows about a layer: enough to resolve `da.drive_*` against it.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum LayerInfo {
@@ -186,7 +139,7 @@ pub(crate) enum LayerInfo {
         options: BTreeMap<String, i64>,
     },
     Switch {
-        source: SwitchDriver,
+        parameter: Unresolved<String>,
     },
     Puppet {
         parameter: Unresolved<String>,
@@ -205,12 +158,6 @@ impl LayerInfo {
             LayerInfo::Raw => "raw",
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum SwitchDriver {
-    Parameter(Unresolved<String>),
-    Gate(Unresolved<String>),
 }
 
 /// Every animator parameter of the avatar, in the order they were declared or generated.
@@ -236,10 +183,6 @@ enum ParameterSource {
 }
 
 impl ParameterTable {
-    pub fn contains(&self, name: &str) -> bool {
-        self.index.contains_key(name)
-    }
-
     fn declare(&mut self, parameter: PrimitiveParameter) -> Result<(), TransformError> {
         let value_type = match parameter.value {
             PrimitiveParameterValue::Bool { .. } => AnimatedValueType::Bool,
@@ -250,7 +193,7 @@ impl ParameterTable {
             let kind = match existing.source {
                 ParameterSource::Provided(_) => TransformErrorKind::ParameterCollidesWithProvided { name: parameter.name.clone() },
                 ParameterSource::Declared(_) => TransformErrorKind::DuplicateParameter { name: parameter.name.clone() },
-                ParameterSource::Generated { .. } => TransformErrorKind::GateCollidesWithParameter { name: parameter.name.clone() },
+                ParameterSource::Generated { .. } => TransformErrorKind::GeneratedParameterCollision { name: parameter.name.clone() },
             };
             return Err(kind.at(parameter.at.clone()));
         }
@@ -392,7 +335,7 @@ mod tests {
             Avatar,
             behavior::Content,
             controller::Controller,
-            layer::{BlendLayer, GroupLayer, GroupOption, PuppetLayer, SwitchContent},
+            layer::{BlendLayer, GroupLayer, GroupOption, PuppetLayer, SwitchContent, SwitchLayer},
         },
         vrchat::playable_layer::PlayableLayer,
     };
@@ -598,61 +541,6 @@ mod tests {
         assert_eq!(context.parameters.animator_parameters().len(), 3);
     }
 
-    #[rstest]
-    fn a_gate_becomes_a_generated_bool_parameter() {
-        let (context, errors) = collect(Avatar {
-            exports: vec![Export::Gate {
-                name: "HatShown".into(),
-                at: at(5),
-            }],
-            ..Avatar::default()
-        });
-
-        assert!(errors.is_empty(), "{errors:?}");
-        assert_eq!(
-            context.parameters.animator_parameters(),
-            vec![AnimatorParameter::create_bool("HatShown", Some(false))]
-        );
-        assert!(context.parameters.expression_parameters().is_empty());
-        assert_eq!(
-            context.switch_parameter(&SwitchDriver::Gate("HatShown".to_owned().into())).unwrap(),
-            Resolved::new("HatShown".into(), AnimatedValueType::Bool)
-        );
-    }
-
-    #[rstest]
-    fn a_gate_may_not_share_a_name_with_a_parameter() {
-        let (_, errors) = collect(Avatar {
-            parameters: vec![int("Hat", 1)],
-            exports: vec![Export::Gate { name: "Hat".into(), at: at(5) }],
-            ..Avatar::default()
-        });
-
-        assert_eq!(errors, vec![TransformErrorKind::GateCollidesWithParameter { name: "Hat".into() }.at(at(5))]);
-    }
-
-    #[rstest]
-    fn a_guard_is_not_supported_yet() {
-        let (_, errors) = collect(Avatar {
-            exports: vec![Export::Guard {
-                gate: Unresolved::located("HatShown".into(), at(6).unwrap()),
-                parameter: "Hat".to_owned().into(),
-            }],
-            ..Avatar::default()
-        });
-
-        assert_eq!(errors, vec![TransformErrorKind::Unsupported { feature: "`da.guard`" }.at(at(6))]);
-    }
-
-    #[rstest]
-    fn an_unknown_gate_is_reported_when_a_switch_follows_it() {
-        let (context, _) = collect(Avatar::default());
-        let error = context
-            .switch_parameter(&SwitchDriver::Gate(Unresolved::located("HatShown".into(), at(6).unwrap())))
-            .unwrap_err();
-        assert_eq!(error, TransformErrorKind::UnknownGate { name: "HatShown".into() }.at(at(6)));
-    }
-
     fn group(name: &str, driven_by: Option<&str>, options: &[&str], line: u32) -> Layer {
         Layer::Group(GroupLayer {
             name: name.into(),
@@ -689,7 +577,7 @@ mod tests {
                     group("Expressions", Some("Emote"), &["smile", "angry"], 10),
                     Layer::Switch(SwitchLayer {
                         name: "Hat".into(),
-                        source: None,
+                        driven_by: None,
                         content: SwitchContent::Toggle(Content::new()),
                         at: at(11),
                     }),
@@ -714,7 +602,7 @@ mod tests {
         assert_eq!(
             context.layers.get("Hat"),
             Some(&LayerInfo::Switch {
-                source: SwitchDriver::Parameter(Unresolved::located("Hat".into(), at(11).unwrap())),
+                parameter: Unresolved::located("Hat".into(), at(11).unwrap()),
             })
         );
         assert_eq!(context.layers.get("Face"), Some(&LayerInfo::Blend));

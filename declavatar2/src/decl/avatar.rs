@@ -1,7 +1,4 @@
-use crate::{
-    core::resolution::{SourceLocation, Unresolved},
-    decl::{controller::Controller, layer::Layer, menu::MenuItem, parameter::Parameter},
-};
+use crate::decl::{controller::Controller, layer::Layer, menu::MenuItem, parameter::Parameter};
 
 /// Root of a declaration, what one script returns.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -9,7 +6,6 @@ pub struct Avatar {
     pub parameters: Vec<Parameter>,
     pub controllers: Vec<Controller>,
     pub menu: Vec<MenuItem>,
-    pub exports: Vec<Export>,
 }
 
 impl Avatar {
@@ -19,26 +15,16 @@ impl Avatar {
     }
 }
 
-/// Entry of the `exports` block.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Export {
-    /// Declares a gate that other assets can drive.
-    Gate { name: String, at: Option<SourceLocation> },
-
-    /// Binds a gate to a parameter.
-    Guard { gate: Unresolved<String>, parameter: Unresolved<String> },
-}
-
 #[cfg(test)]
 mod tests {
     use rstest::*;
 
     use super::*;
     use crate::{
-        core::phase::Declared,
+        core::{phase::Declared, resolution::Unresolved},
         decl::{
             behavior::{Animation, Content, Drive},
-            layer::{GroupLayer, GroupOption, SwitchContent, SwitchLayer, SwitchSource},
+            layer::{GroupLayer, GroupOption, SwitchContent, SwitchLayer},
             parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup},
         },
         unity::{
@@ -115,7 +101,7 @@ mod tests {
                     }),
                     Layer::Switch(SwitchLayer {
                         name: "Hat".into(),
-                        source: Some(SwitchSource::Parameter(Unresolved::new("Hat".into()))),
+                        driven_by: Some(Unresolved::new("Hat".into())),
                         content: SwitchContent::Toggle(Content {
                             animation: Animation::from([active("Hat", true)]),
                             behaviors: vec![],
@@ -131,7 +117,6 @@ mod tests {
                     value: None,
                 },
             }],
-            exports: vec![],
         }
     }
 

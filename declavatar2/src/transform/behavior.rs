@@ -48,10 +48,11 @@ impl Context {
             }
             Drive::Switch { layer, value } => {
                 let info = self.layer(layer)?;
-                let LayerInfo::Switch { source } = info else {
+                let LayerInfo::Switch { parameter } = info else {
                     return Err(kind_mismatch(layer, "switch", info));
                 };
-                Ok((self.switch_parameter(source)?, AnimatedValue::Bool(value.unwrap_or(true))))
+                let parameter = self.parameters.resolve_typed(parameter, AnimatedValueType::Bool)?;
+                Ok((parameter, AnimatedValue::Bool(value.unwrap_or(true))))
             }
             Drive::Puppet { layer, value } => {
                 let info = self.layer(layer)?;
@@ -109,10 +110,9 @@ mod tests {
         core::resolution::Resolved,
         decl::{
             Avatar,
-            avatar::Export,
             behavior::Content,
             controller::Controller,
-            layer::{GroupLayer, GroupOption, Layer, PuppetLayer, SwitchContent, SwitchLayer, SwitchSource},
+            layer::{GroupLayer, GroupOption, Layer, PuppetLayer, SwitchContent, SwitchLayer},
             parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue},
         },
         unity::state::GenericStateBehavior,
@@ -168,13 +168,7 @@ mod tests {
                     }),
                     Layer::Switch(SwitchLayer {
                         name: "Hat".into(),
-                        source: Some(SwitchSource::Parameter("Hat".to_owned().into())),
-                        content: SwitchContent::Toggle(Content::new()),
-                        at: None,
-                    }),
-                    Layer::Switch(SwitchLayer {
-                        name: "Gated".into(),
-                        source: Some(SwitchSource::Gate("HatShown".to_owned().into())),
+                        driven_by: Some("Hat".to_owned().into()),
                         content: SwitchContent::Toggle(Content::new()),
                         at: None,
                     }),
@@ -186,10 +180,6 @@ mod tests {
                     }),
                 ],
             )],
-            exports: vec![Export::Gate {
-                name: "HatShown".into(),
-                at: None,
-            }],
             ..Avatar::default()
         };
         let (context, errors) = Context::collect(&declaration);
@@ -208,7 +198,6 @@ mod tests {
     )]
     #[case::switch_on(Drive::Switch { layer: "Hat".to_owned().into(), value: None }, (resolved("Hat", AnimatedValueType::Bool), AnimatedValue::Bool(true)))]
     #[case::switch_off(Drive::Switch { layer: "Hat".to_owned().into(), value: Some(false) }, (resolved("Hat", AnimatedValueType::Bool), AnimatedValue::Bool(false)))]
-    #[case::gated(Drive::Switch { layer: "Gated".to_owned().into(), value: None }, (resolved("HatShown", AnimatedValueType::Bool), AnimatedValue::Bool(true)))]
     #[case::puppet(Drive::Puppet { layer: "Wink".to_owned().into(), value: Some(0.25) }, (resolved("Wink", AnimatedValueType::Float), AnimatedValue::Float(0.25)))]
     #[case::puppet_full(Drive::Puppet { layer: "Wink".to_owned().into(), value: None }, (resolved("Wink", AnimatedValueType::Float), AnimatedValue::Float(1.0)))]
     #[case::parameter(

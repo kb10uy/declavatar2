@@ -61,16 +61,9 @@ pub struct GroupOption {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchLayer {
     pub name: String,
-    pub source: Option<SwitchSource>,
+    pub driven_by: Option<Unresolved<String>>,
     pub content: SwitchContent,
     pub at: Option<SourceLocation>,
-}
-
-/// What decides the state of a `SwitchLayer`.
-#[derive(Debug, Clone, PartialEq)]
-pub enum SwitchSource {
-    Parameter(Unresolved<String>),
-    Gate(Unresolved<String>),
 }
 
 /// How the two states of a `SwitchLayer` are written.

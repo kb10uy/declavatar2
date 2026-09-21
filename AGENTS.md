@@ -116,7 +116,7 @@ Lua script
         - `true` (default): every state is equal. Entry fans out to each option on `== index` and falls back to the default state, each option exits on `!= index`, the default state exits on each `== index`. Switching between options never passes through the default state, so its behaviors do not run on the way. Entry transitions carry no duration; a crossfade is set on the exit transitions and applies to whatever state Entry resolves to, so it is per source state, not per destination.
         - `false`: the v1 hub. The default state transitions to each option on `== index`, each option returns to the default state on `!= index`. Every switch passes through the default state for one frame and runs its behaviors; use this when that pass or per-transition durations are wanted.
     - Direct blend tree output is not generated from a group layer. Write `da.raw.state` with `da.raw.blend_tree({ type = "linear" })` for that.
-- `da.switch_layer(name, { driven_by | gate }, enabled)` or `da.switch_layer(name, { driven_by | gate }, disabled, enabled)`.
+- `da.switch_layer(name, { driven_by }, enabled)` or `da.switch_layer(name, { driven_by }, disabled, enabled)`.
     - The options table is required (pass `{}` when empty) so that three arguments always mean a toggle list and four always mean both sides. Table shapes are never inspected to tell the forms apart.
     - The three-argument form is a toggle list: on gets the given or full value, off gets the zeroed value. Explicit `false` or zero values in a toggle list are an error.
     - The four-argument form spells both sides out in `disabled, enabled` order, matching `false, true`. An empty `disabled` list writes nothing in the off state, unlike a toggle list which writes zeroed values.
@@ -129,8 +129,6 @@ Lua script
     - Each child becomes a direct field weighted by a float animator parameter fixed at `1.0`; the transform adds that parameter and it is not an expression parameter. The layer is Write Defaults on.
     - Children sum instead of overriding, so a target animated by two children of the same blend layer is an error. Overlap with other layers keeps the usual layer-order override.
     - The merged layer sits where the `da.blend_layer` is written in its controller. Drives such as `da.drive_puppet` keep referencing the child layer by name.
-- `exports = { da.gate(name), da.guard(gate, parameter) }`.
-
 #### Raw Layers (`da.raw.*`)
 
 - `da.raw.layer(name, { default = state }, { states and/or transitions })`.
@@ -185,7 +183,6 @@ return da.avatar({
     - The animator parameter list is every declared, provided and generated parameter in that order. Expression parameters are the declared ones whose scope is not `internal`; the default scope is `synced` and `save` defaults to `false`. Unspecified bit widths stay `Unspecified`.
     - Provided parameters are declared with their VRChat names (`AFK`, `VRMode`, ...) and take part in type checks like any other parameter, so a group layer can be driven by `GestureLeft`.
     - A layer whose `driven_by` is omitted follows the parameter named after the layer. It must be declared like any other.
-    - `da.gate(name)` generates an internal bool animator parameter of that name, and a switch layer with `gate = name` follows it. `da.guard` is rejected as unsupported until its semantics are settled.
     - A blend layer generates one float parameter `{blend}/{child}` per child, fixed at `1.0`.
 - Layers
     - Group option indices are `1..n` in the written order, and the default state is index `0`. State names are `Default` and the option names.
@@ -195,7 +192,7 @@ return da.avatar({
     - Clip options on the motion of a state become the state's `Playback` (`speed`, `speed_by`, `time_by`). Inside a blend tree only `speed` is meaningful and it becomes the field's speed; `speed_by` and `time_by` there are errors.
     - No layer gets a transition duration yet; every generated transition has duration `0.0`.
 - Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
-- Not done yet: serialization of the compiled model (`AnimatedValue` and the animator structures do not derive `Serialize`), bit width assignment for `Unspecified` widths, and `da.guard`.
+- Not done yet: serialization of the compiled model (`AnimatedValue` and the animator structures do not derive `Serialize`), and bit width assignment for `Unspecified` widths.
 
 ### Interop Format
 

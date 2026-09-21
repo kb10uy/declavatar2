@@ -86,15 +86,6 @@ pub enum TransformErrorKind {
         found: AnimatedValueType,
     },
 
-    #[error("gate `{name}` is declared more than once")]
-    DuplicateGate { name: String },
-
-    #[error("gate `{name}` is not declared")]
-    UnknownGate { name: String },
-
-    #[error("gate `{name}` collides with a parameter of the same name")]
-    GateCollidesWithParameter { name: String },
-
     #[error("the transform needs parameter `{name}` for itself, but the script declares it")]
     GeneratedParameterCollision { name: String },
 
@@ -164,9 +155,6 @@ pub enum TransformErrorKind {
 
     #[error("menu `{name}` holds {count} controls, but a menu can hold {capacity} at most")]
     MenuTooLarge { name: String, count: usize, capacity: usize },
-
-    #[error("{feature} is not supported yet")]
-    Unsupported { feature: &'static str },
 }
 
 impl TransformErrorKind {

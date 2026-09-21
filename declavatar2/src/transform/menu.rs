@@ -161,7 +161,7 @@ mod tests {
                     }),
                     Layer::Switch(SwitchLayer {
                         name: "Hat".into(),
-                        source: None,
+                        driven_by: None,
                         content: SwitchContent::Toggle(Content::new()),
                         at: None,
                     }),

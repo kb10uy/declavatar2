@@ -7,7 +7,7 @@ use declavatar2::{
         Avatar,
         behavior::{Animation, Content, Drive},
         controller::Controller,
-        layer::{GroupLayer, GroupOption, Layer, SwitchContent, SwitchLayer, SwitchSource},
+        layer::{GroupLayer, GroupOption, Layer, SwitchContent, SwitchLayer},
         menu::MenuItem,
         parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup},
     },
@@ -102,7 +102,7 @@ fn expressions_layer() -> Layer {
 fn hat_layer() -> Layer {
     Layer::Switch(SwitchLayer {
         name: "Hat".into(),
-        source: Some(SwitchSource::Parameter(Unresolved::new("Hat".into()))),
+        driven_by: Some(Unresolved::new("Hat".into())),
         content: SwitchContent::Toggle(animation_only([active("Hat", true)])),
         at: at(18),
     })
@@ -155,7 +155,6 @@ fn the_documented_example_declares_the_avatar_it_describes() {
                     value: None,
                 },
             }],
-            exports: vec![],
         }
     );
 }

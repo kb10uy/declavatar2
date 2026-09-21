@@ -67,20 +67,13 @@ fn avatar(lua: &Lua, blocks: Option<Table>) -> LuaResult<node::Avatar> {
     let parameters = options.take::<Table>("parameters")?;
     let controllers = options.take::<Table>("controllers")?;
     let menu = options.take::<Table>("menu")?;
-    let exports = options.take::<Table>("exports")?;
     options.finish()?;
 
     let parameters = block::<node::Parameter, _>(lua, "da.avatar: parameters", parameters)?;
     let controllers = block::<node::Controller, _>(lua, "da.avatar: controllers", controllers)?;
     let menu = block::<node::MenuItem, _>(lua, "da.avatar: menu", menu)?;
-    let exports = block::<node::Export, _>(lua, "da.avatar: exports", exports)?;
 
-    Ok(node::Avatar(decl::Avatar {
-        parameters,
-        controllers,
-        menu,
-        exports,
-    }))
+    Ok(node::Avatar(decl::Avatar { parameters, controllers, menu }))
 }
 
 /// Reads one block of `da.avatar`, which is a child list that may be left out entirely.

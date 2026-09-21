@@ -3,9 +3,8 @@ use mlua::{Error as LuaError, FromLua, Lua, Result as LuaResult, Table, Value, V
 use crate::{
     core::resolution::Unresolved,
     decl::{
-        avatar::Export,
         behavior::Content,
-        layer::{BlendLayer, GroupLayer, GroupOption, Layer, PuppetKeyframe, PuppetLayer, SwitchContent, SwitchLayer, SwitchSource},
+        layer::{BlendLayer, GroupLayer, GroupOption, Layer, PuppetKeyframe, PuppetLayer, SwitchContent, SwitchLayer},
     },
     lua::{
         content, list,
@@ -24,8 +23,6 @@ pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
     da.set("keyframe", lua.create_function(keyframe)?)?;
     da.set("puppet_layer", lua.create_function(puppet_layer)?)?;
     da.set("blend_layer", lua.create_function(blend_layer)?)?;
-    da.set("gate", lua.create_function(gate)?)?;
-    da.set("guard", lua.create_function(guard)?)?;
     Ok(())
 }
 
@@ -95,7 +92,7 @@ fn switch_layer(lua: &Lua, (name, table, first, second): (String, Table, Table, 
     const OWNER: &str = "da.switch_layer";
 
     let mut options = Options::new(OWNER, Some(table));
-    let source = switch_source(lua, OWNER, &mut options)?;
+    let driven_by = options.take::<String>("driven_by")?.map(|parameter| located(lua, parameter));
     options.finish()?;
 
     let content = match second {
@@ -112,24 +109,10 @@ fn switch_layer(lua: &Lua, (name, table, first, second): (String, Table, Table, 
 
     Ok(node::Layer(Layer::Switch(SwitchLayer {
         name,
-        source,
+        driven_by,
         content,
         at: caller_location(lua),
     })))
-}
-
-fn switch_source(lua: &Lua, owner: &'static str, options: &mut Options) -> LuaResult<Option<SwitchSource>> {
-    let driven_by = options.take::<String>("driven_by")?;
-    let gate = options.take::<String>("gate")?;
-
-    match (driven_by, gate) {
-        (Some(_), Some(_)) => Err(LuaError::runtime(format!(
-            "{owner}: a switch layer follows either `driven_by` or `gate`, not both"
-        ))),
-        (Some(parameter), None) => Ok(Some(SwitchSource::Parameter(located(lua, parameter)))),
-        (None, Some(gate)) => Ok(Some(SwitchSource::Gate(located(lua, gate)))),
-        (None, None) => Ok(None),
-    }
 }
 
 /// A toggle list spells out the enabled side, so a value equal to its own zero says nothing.
@@ -197,20 +180,6 @@ fn blend_layer(lua: &Lua, (name, children): (String, Table)) -> LuaResult<node::
     })))
 }
 
-fn gate(lua: &Lua, name: String) -> LuaResult<node::Export> {
-    Ok(node::Export(Export::Gate {
-        name,
-        at: caller_location(lua),
-    }))
-}
-
-fn guard(lua: &Lua, (gate, parameter): (String, String)) -> LuaResult<node::Export> {
-    Ok(node::Export(Export::Guard {
-        gate: located(lua, gate),
-        parameter: located(lua, parameter),
-    }))
-}
-
 fn layer_kind(layer: &Layer) -> &'static str {
     match layer {
         Layer::Group(_) => "group",
@@ -243,11 +212,6 @@ mod tests {
     fn layer_of(expression: &str) -> Layer {
         let (lua, value) = eval(expression);
         node::Layer::from_lua(value, &lua).expect("a layer should be built").0
-    }
-
-    fn export_of(expression: &str) -> Export {
-        let (lua, value) = eval(expression);
-        node::Export::from_lua(value, &lua).expect("an export should be built").0
     }
 
     fn group_of(expression: &str) -> GroupLayer {
@@ -364,7 +328,7 @@ mod tests {
     fn three_arguments_make_a_switch_layer_a_toggle_list() {
         let switch = switch_of("da.switch_layer('Hat', { driven_by = 'Hat' }, { da.object('Hat'):active() })");
 
-        assert_eq!(switch.source, Some(SwitchSource::Parameter(Unresolved::new("Hat".into()))));
+        assert_eq!(switch.driven_by, Some(Unresolved::new("Hat".into())));
         let SwitchContent::Toggle(toggle) = switch.content else {
             panic!("expected a toggle list");
         };
@@ -390,7 +354,7 @@ mod tests {
     fn an_empty_options_table_still_makes_three_arguments_a_toggle_list() {
         let switch = switch_of("da.switch_layer('Hat', {}, { da.object('Hat'):active() })");
 
-        assert_eq!(switch.source, None);
+        assert_eq!(switch.driven_by, None);
         assert!(matches!(switch.content, SwitchContent::Toggle(_)));
     }
 
@@ -403,18 +367,6 @@ mod tests {
         };
         assert_eq!(off.animation.entries().count(), 0);
         assert_eq!(on.animation.entries().count(), 1);
-    }
-
-    #[rstest]
-    fn a_switch_layer_follows_a_gate_instead_of_a_parameter() {
-        let switch = switch_of("da.switch_layer('Hat', { gate = 'HatShown' }, { da.object('Hat'):active() })");
-        assert_eq!(switch.source, Some(SwitchSource::Gate(Unresolved::new("HatShown".into()))));
-    }
-
-    #[rstest]
-    fn a_switch_layer_cannot_follow_both_a_parameter_and_a_gate() {
-        let message = eval_error("da.switch_layer('Hat', { driven_by = 'Hat', gate = 'HatShown' }, { da.object('Hat'):active() })");
-        assert!(message.contains("either `driven_by` or `gate`, not both"), "{message}");
     }
 
     #[rstest]
@@ -475,27 +427,6 @@ mod tests {
         let message = eval_error("da.blend_layer('Merged', { da.switch_layer('Hat', {}, { da.object('Hat'):active() }) })");
         assert!(message.contains("da.blend_layer: entry 1 of `Merged` is a switch layer"), "{message}");
         assert!(message.contains("only a puppet layer can be merged"), "{message}");
-    }
-
-    #[rstest]
-    fn exports_declare_gates_and_guards() {
-        assert_eq!(
-            export_of("da.gate('HatShown')"),
-            Export::Gate {
-                name: "HatShown".into(),
-                at: Some(SourceLocation {
-                    chunk: "test.lua".into(),
-                    line: 2,
-                }),
-            },
-        );
-        assert_eq!(
-            export_of("da.guard('HatShown', 'Hat')"),
-            Export::Guard {
-                gate: Unresolved::new("HatShown".into()),
-                parameter: Unresolved::new("Hat".into()),
-            },
-        );
     }
 
     #[rstest]

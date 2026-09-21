@@ -104,9 +104,6 @@ declare_nodes! {
     /// Condition of a raw transition.
     "condition" => Condition(decl::raw::Condition),
 
-    /// Entry of the `exports` block.
-    "export" => Export(decl::avatar::Export),
-
     /// Parameter drive written with `da.drive_*`.
     "drive" => Drive(decl::behavior::Drive),
 

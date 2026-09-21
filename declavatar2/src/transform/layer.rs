@@ -12,7 +12,7 @@ use crate::{
     },
     transform::{
         animation::{describe, describe_all},
-        context::{Context, driver, switch_driver},
+        context::{Context, driver},
         error::{TransformError, TransformErrorKind},
         raw,
     },
@@ -123,7 +123,9 @@ fn group(context: &mut Context, group: &GroupLayer) -> Result<AnimatorLayer, Tra
 }
 
 fn switch(context: &mut Context, switch: &SwitchLayer) -> Result<AnimatorLayer, TransformError> {
-    let parameter = context.switch_parameter(&switch_driver(switch))?;
+    let parameter = context
+        .parameters
+        .resolve_typed(&driver(switch.driven_by.as_ref(), &switch.name, switch.at.as_ref()), AnimatedValueType::Bool)?;
 
     let (off, on) = match &switch.content {
         SwitchContent::Toggle(content) => {
@@ -615,7 +617,7 @@ mod tests {
     fn hat(content: SwitchContent) -> SwitchLayer {
         SwitchLayer {
             name: "Hat".into(),
-            source: None,
+            driven_by: None,
             content,
             at: located_at(20),
         }

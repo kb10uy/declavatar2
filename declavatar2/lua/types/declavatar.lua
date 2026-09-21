@@ -37,9 +37,6 @@ local da = {}
 --- One keyframe of a puppet layer.
 ---@class da.Keyframe
 
---- Entry of the `exports` block.
----@class da.Export
-
 --- Parameter drive, which a state runs and a menu item triggers.
 ---@class da.Drive
 
@@ -144,7 +141,6 @@ local da = {}
 ---@alias da.ControllerList (da.Controller|false)[]
 ---@alias da.LayerList (da.Layer|false)[]
 ---@alias da.MenuItemList (da.MenuItem|false)[]
----@alias da.ExportList (da.Export|false)[]
 ---@alias da.ContentList (da.Target|da.Drive|da.Behavior|false)[]
 ---@alias da.TargetList (da.Target|false)[]
 ---@alias da.BehaviorList (da.Drive|da.Behavior|false)[]
@@ -167,7 +163,6 @@ local da = {}
 ---@field parameters? da.ParameterList
 ---@field controllers? da.ControllerList
 ---@field menu? da.MenuItemList
----@field exports? da.ExportList
 
 ---@class da.BoolOptions
 ---@field default? boolean
@@ -197,10 +192,8 @@ local da = {}
 ---@field driven_by? string
 ---@field symmetric? boolean Defaults to true, where switching between options never passes through the default state.
 
---- A switch layer follows either `driven_by` or `gate`, not both.
 ---@class da.SwitchLayerOptions
 ---@field driven_by? string
----@field gate? string
 
 ---@class da.PuppetLayerOptions
 ---@field driven_by? string Must be a float.
@@ -564,17 +557,6 @@ function da.puppet_layer(name, options, keyframes) end
 ---@param children da.LayerList
 ---@return da.Layer
 function da.blend_layer(name, children) end
-
---- Declares a gate that other assets can drive.
----@param name string
----@return da.Export
-function da.gate(name) end
-
---- Binds a gate to a parameter.
----@param gate string
----@param parameter string
----@return da.Export
-function da.guard(gate, parameter) end
 
 --------------------------------------------------------------------------------
 -- Menu
