@@ -65,7 +65,10 @@ declare_nodes! {
     /// Animated target and the value written for it.
     "target" => Target(crate::unity::animation::FixedAnimationEntry<crate::core::phase::Declared>),
 
-    /// Entry of the `fx_controller` block.
+    /// Entry of the `controllers` block, written with `da.controller`.
+    "controller" => Controller(decl::controller::Controller),
+
+    /// Layer inside a controller.
     "layer" => Layer(decl::layer::Layer),
 
     /// Default state of a group layer, written with `da.default`.

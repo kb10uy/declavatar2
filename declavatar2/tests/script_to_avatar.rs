@@ -9,10 +9,14 @@ use declavatar2::{
     core::resolution::Resolved,
     unity::{
         animation::InlineAnimation,
-        animator::{AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter},
+        animator::{AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, MergeMode, PathMode},
+        external::AssetLocator,
         value::{AnimatedValue, AnimatedValueType},
     },
-    vrchat::expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
+    vrchat::{
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
+        playable_layer::PlayableLayer,
+    },
 };
 use rstest::*;
 
@@ -28,12 +32,14 @@ return da.avatar({
         da.int("Emote", { default = 42 }),
         hat and da.bool("Hat", { scope = "local" }),
     },
-    fx_controller = {
-        da.group_layer("Expressions", { driven_by = "Emote" }, {
-            da.default { Face:shape("eyelid_L", 0.3) },
-            da.option("smile", { Face:shape("smile"), Face:shape("eye_joy", 0.5) }),
+    controllers = {
+        da.controller("fx", {
+            da.group_layer("Expressions", { driven_by = "Emote" }, {
+                da.default { Face:shape("eyelid_L", 0.3) },
+                da.option("smile", { Face:shape("smile"), Face:shape("eye_joy", 0.5) }),
+            }),
+            hat and da.switch_layer("Hat", { driven_by = "Hat" }, { da.object("Hat"):active() }),
         }),
-        hat and da.switch_layer("Hat", { driven_by = "Hat" }, { da.object("Hat"):active() }),
     },
     menu = {
         hat and da.toggle("Hat", da.drive_switch("Hat")),
@@ -79,12 +85,21 @@ fn the_documented_example_compiles_to_the_avatar_it_describes() {
         ]
     );
 
-    let parameters = &avatar.fx_controller.parameters;
+    assert_eq!(avatar.controllers.len(), 1);
+    let fx = &avatar.controllers[0];
+    assert_eq!(fx.playable, PlayableLayer::Fx);
+    assert_eq!(fx.mode, MergeMode::Append);
+    assert_eq!(fx.priority, 0);
+    assert_eq!(fx.path_mode, PathMode::Absolute);
+    assert_eq!(fx.mask, None);
+    assert!(!avatar.externals.needs_relative_root);
+
+    let parameters = &fx.controller.parameters;
     assert!(parameters.contains(&AnimatorParameter::create_int("GestureLeft", None)));
     assert!(parameters.contains(&AnimatorParameter::create_int("Emote", Some(42))));
     assert!(parameters.contains(&AnimatorParameter::create_bool("Hat", None)));
 
-    let layers = &avatar.fx_controller.layers;
+    let layers = &fx.controller.layers;
     assert_eq!(layers.iter().map(|layer| layer.name.clone()).collect::<Vec<_>>(), ["Expressions", "Hat"]);
 
     let expressions = &layers[0];
@@ -149,7 +164,7 @@ fn the_documented_example_compiles_to_the_avatar_it_describes() {
     assert_eq!(paths, ["Face", "Hat"]);
     let mut face_lines: Vec<_> = avatar.externals.object_paths.entries()[0].referenced_at.iter().map(|at| at.line).collect();
     face_lines.sort_unstable();
-    assert_eq!(face_lines, [14, 15]);
+    assert_eq!(face_lines, [15, 16]);
     assert!(avatar.externals.component_types.is_empty());
     assert!(avatar.externals.assets.is_empty());
 }
@@ -159,7 +174,7 @@ fn a_symbol_the_host_withholds_drops_everything_guarded_by_it() {
     let avatar = run(&[]);
 
     assert_eq!(avatar.expression_parameters.len(), 1);
-    assert_eq!(avatar.fx_controller.layers.len(), 1);
+    assert_eq!(avatar.controllers[0].controller.layers.len(), 1);
     assert!(avatar.menu.is_empty());
 }
 
@@ -177,9 +192,11 @@ return da.avatar({
         da.int("Emote"),
         da.int("Emote"),
     },
-    fx_controller = {
-        da.group_layer("Expressions", { driven_by = "Missing" }, {}),
-        da.switch_layer("Hat", { driven_by = "Emote" }, {}),
+    controllers = {
+        da.controller("fx", {
+            da.group_layer("Expressions", { driven_by = "Missing" }, {}),
+            da.switch_layer("Hat", { driven_by = "Emote" }, {}),
+        }),
     },
     menu = {
         da.toggle("Hat", da.drive_switch("Nope")),
@@ -192,11 +209,62 @@ return da.avatar({
         errors,
         vec![
             "avatar.lua:5: parameter `Emote` is declared more than once",
-            "avatar.lua:8: parameter `Missing` is not declared",
-            "avatar.lua:9: parameter `Emote` is Int, but Bool is needed here",
-            "avatar.lua:12: layer `Nope` is not declared",
+            "avatar.lua:9: parameter `Missing` is not declared",
+            "avatar.lua:10: parameter `Emote` is Int, but Bool is needed here",
+            "avatar.lua:14: layer `Nope` is not declared",
         ]
     );
+}
+
+#[rstest]
+fn controllers_are_bound_per_playable_layer_with_how_they_are_applied() {
+    let avatar = compile(
+        r#"local da = require "declavatar"
+return da.avatar({
+    parameters = {
+        da.provided("VRChat"),
+        da.bool("Hat"),
+    },
+    controllers = {
+        da.controller("gesture", { mode = "replace", priority = -10, mask = da.asset.path("Assets/Hands.mask") }, {
+            da.switch_layer("Fist", { driven_by = "Hat" }, { da.object("Hat"):active() }),
+        }),
+        da.controller("fx", { path_mode = "relative" }, {
+            da.switch_layer("Hat", { driven_by = "Hat" }, { da.object("Hat"):active() }),
+        }),
+    },
+})
+"#,
+        "avatar.lua",
+        &EvaluateOptions::new(),
+    )
+    .expect("the script should compile");
+
+    let playables: Vec<_> = avatar.controllers.iter().map(|controller| controller.playable).collect();
+    assert_eq!(playables, [PlayableLayer::Gesture, PlayableLayer::Fx]);
+
+    let gesture = &avatar.controllers[0];
+    assert_eq!(gesture.mode, MergeMode::Replace);
+    assert_eq!(gesture.priority, -10);
+    assert_eq!(gesture.path_mode, PathMode::Absolute);
+    let mask = gesture.mask.expect("mask should be interned");
+    assert_eq!(avatar.externals.assets.get(mask).value, AssetLocator::Path("Assets/Hands.mask".into()));
+    assert_eq!(
+        avatar.externals.assets.get(mask).referenced_at.iter().map(|at| at.line).collect::<Vec<_>>(),
+        [8]
+    );
+
+    let fx = &avatar.controllers[1];
+    assert_eq!(fx.mode, MergeMode::Append);
+    assert_eq!(fx.path_mode, PathMode::Relative);
+    assert!(avatar.externals.needs_relative_root);
+
+    for controller in &avatar.controllers {
+        assert!(controller.controller.parameters.contains(&AnimatorParameter::create_bool("Hat", None)));
+        assert!(controller.controller.parameters.contains(&AnimatorParameter::create_int("GestureLeft", None)));
+    }
+    let paths: Vec<_> = avatar.externals.object_paths.entries().iter().map(|entry| entry.value.clone()).collect();
+    assert_eq!(paths, ["Hat"]);
 }
 
 #[rstest]

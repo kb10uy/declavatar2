@@ -7,7 +7,7 @@ use crate::{unity::external::Externals, vrchat::expr_parameter::ExpressionParame
 pub use behavior::Behavior;
 pub use controller::{
     AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, BlendTree, Clip, DirectBlendTree, DirectField, Motion,
-    ParameterRef, ParametricBlendTree, ParametricField, Playback, TransitionSource, TransitionTarget,
+    ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource, TransitionTarget,
 };
 pub use menu::{MenuAxis, MenuItem};
 
@@ -18,7 +18,9 @@ pub struct Avatar {
     /// Parameters exposed as VRChat expression parameters, in declaration order.
     pub expression_parameters: Vec<ExpressionParameter>,
 
-    pub fx_controller: AnimatorController,
+    /// Generated controllers in declaration order. Every one carries the full animator parameter list.
+    pub controllers: Vec<PlayableController>,
+
     pub menu: Vec<MenuItem>,
     pub externals: Externals,
 }

@@ -1,5 +1,6 @@
 pub mod avatar;
 pub mod behavior;
+pub mod controller;
 pub mod layer;
 pub mod menu;
 pub mod parameter;
@@ -7,6 +8,7 @@ pub mod raw;
 
 pub use avatar::{Avatar, Export};
 pub use behavior::{Animation, Behavior, Content, Drive};
+pub use controller::Controller;
 pub use layer::{BlendLayer, GroupLayer, GroupOption, Layer, PuppetKeyframe, PuppetLayer, SwitchContent, SwitchLayer, SwitchSource};
 pub use menu::{Axis, AxisTarget, FourAxes, MenuItem, TwoAxes};
 pub use parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup};

@@ -138,11 +138,11 @@ mod tests {
 
     #[rstest]
     fn builder_error_points_at_the_call_site() {
-        let error = run("local da = require \"declavatar\"\nreturn da.avatar({ fx_controllers = {} })\n").expect_err("script should fail");
+        let error = run("local da = require \"declavatar\"\nreturn da.avatar({ fx_controller = {} })\n").expect_err("script should fail");
         let message = message(error);
 
-        assert!(message.contains("da.avatar: unknown option `fx_controllers`"), "{message}");
-        assert!(message.contains("known options are parameters, fx_controller, menu, exports"), "{message}");
+        assert!(message.contains("da.avatar: unknown option `fx_controller`"), "{message}");
+        assert!(message.contains("known options are parameters, controllers, menu, exports"), "{message}");
         assert!(message.contains("avatar.lua:2:"), "{message}");
     }
 

@@ -318,6 +318,7 @@ mod tests {
         decl::{
             Avatar,
             behavior::{Behavior, Drive},
+            controller::Controller,
             layer::GroupOption,
             parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue},
         },
@@ -325,6 +326,7 @@ mod tests {
             animator::{AnimatedGameObjectProperty, AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget},
             external::ObjectPath,
         },
+        vrchat::playable_layer::PlayableLayer,
     };
 
     fn parameter(name: &str, value: PrimitiveParameterValue) -> Parameter {
@@ -345,7 +347,7 @@ mod tests {
                 parameter("Wink", PrimitiveParameterValue::Float { default: None, width: None }),
                 parameter("Brow", PrimitiveParameterValue::Float { default: None, width: None }),
             ],
-            fx_controller: layers,
+            controllers: vec![Controller::new(PlayableLayer::Fx, layers)],
             ..Avatar::default()
         };
         let (context, errors) = Context::collect(&declaration);

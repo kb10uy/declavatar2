@@ -6,7 +6,7 @@ use crate::{
     },
 };
 
-/// Entry of the `fx_controller` block.
+/// Layer inside a controller.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Layer {
     Group(GroupLayer),

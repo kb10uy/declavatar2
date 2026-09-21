@@ -165,6 +165,28 @@ impl<Ph: Phase> Target for AnimatedComponentTarget<Ph> {
     }
 }
 
+/// How a generated controller is applied to the playable layer it is bound for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+pub enum MergeMode {
+    /// The layers are appended to what the playable layer already has.
+    #[default]
+    Append,
+
+    /// The controller replaces the playable layer as a whole.
+    Replace,
+}
+
+/// What the object paths written in a controller are relative to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+pub enum PathMode {
+    /// Paths start at the avatar root.
+    #[default]
+    Absolute,
+
+    /// Paths start at a root the client supplies, so the controller can be applied anywhere in the hierarchy.
+    Relative,
+}
+
 /// Represents a parameter of AnimatorControllers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimatorParameter {

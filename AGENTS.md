@@ -98,6 +98,14 @@ Lua script
 - A generic payload holds plain data only. Parameter names, object paths and assets are not resolved or interned inside it, so it never takes part in reference checking.
 - The Lua builder for it is not exposed yet; only the data model exists.
 
+#### Controllers
+
+- `controllers = { da.controller(playable, { mode, priority, path_mode, mask }, { layers... }), ... }`. There is no `fx_controller` block; every layer lives inside a `da.controller`.
+    - `playable` is `"base"`, `"additive"`, `"gesture"`, `"action"`, `"fx"`, `"sitting"`, `"tpose"` or `"ikpose"`. The same playable layer may be written more than once; each entry is applied on its own, so a low-priority base and a high-priority override can sit in one script.
+    - The options map onto what a Modular Avatar Merge Animator takes: `mode` is `"append"` (default) or `"replace"`, `priority` is an integer defaulting to `0`, `mask` is an explicit `da.asset.*` locator. Delete Attached Animator, Match Avatar Write Defaults and Relative Path Root are component-side settings and are not written in a script.
+    - `path_mode` is `"absolute"` (default) or `"relative"`. Object paths in a relative controller start at a root the client supplies instead of the avatar root. A bound object such as `da.object("Hat")` is only a path, so the same object used from controllers of both modes names two different objects; the transform does not check for that.
+    - Layer names are unique across every controller, because drives such as `da.drive_switch("Hat")` refer to a layer by name alone.
+
 #### Layers
 
 - `da.group_layer(name, { driven_by, symmetric }, { da.default { ... }, da.option(name, targets), ... })`.
@@ -120,7 +128,7 @@ Lua script
     - Only layers that have no behaviors and are driven by a float can be merged, which is currently puppet layers only. Group and switch layers would need a float mirror of their parameter and are not accepted.
     - Each child becomes a direct field weighted by a float animator parameter fixed at `1.0`; the transform adds that parameter and it is not an expression parameter. The layer is Write Defaults on.
     - Children sum instead of overriding, so a target animated by two children of the same blend layer is an error. Overlap with other layers keeps the usual layer-order override.
-    - The merged layer sits where the `da.blend_layer` is written in `fx_controller`. Drives such as `da.drive_puppet` keep referencing the child layer by name.
+    - The merged layer sits where the `da.blend_layer` is written in its controller. Drives such as `da.drive_puppet` keep referencing the child layer by name.
 - `exports = { da.gate(name), da.guard(gate, parameter) }`.
 
 #### Raw Layers (`da.raw.*`)
@@ -152,12 +160,14 @@ return da.avatar({
         da.int("Emote", { default = 42 }),
         hat and da.bool("Hat", { scope = "local" }),
     },
-    fx_controller = {
-        da.group_layer("Expressions", { driven_by = "Emote" }, {
-            da.default { Face:shape("eyelid_L", 0.3) },
-            da.option("smile", { Face:shape("smile"), Face:shape("eye_joy", 0.5) }),
+    controllers = {
+        da.controller("fx", {
+            da.group_layer("Expressions", { driven_by = "Emote" }, {
+                da.default { Face:shape("eyelid_L", 0.3) },
+                da.option("smile", { Face:shape("smile"), Face:shape("eye_joy", 0.5) }),
+            }),
+            hat and da.switch_layer("Hat", { driven_by = "Hat" }, { da.object("Hat"):active() }),
         }),
-        hat and da.switch_layer("Hat", { driven_by = "Hat" }, { da.object("Hat"):active() }),
     },
     menu = {
         hat and da.toggle("Hat", da.drive_switch("Hat")),
@@ -168,7 +178,8 @@ return da.avatar({
 ### Transform
 
 - `transform::transform(&decl::Avatar) -> Result<avatar::Avatar, TransformErrors>`. `declavatar2::compile` runs the interpreter and the transform in one call and is what the FFI wraps.
-- The compiled model lives under `avatar`: `Avatar` holds the expression parameters, an `AnimatorController` (its animator parameters and layers), the menu and `Externals`. It is concrete over `Compiled`, as `decl` is over `Declared`. States and transitions refer to each other by index; a transition source is `Entry` or a state and a target is a state or `Exit`.
+- The compiled model lives under `avatar`: `Avatar` holds the expression parameters, the `PlayableController`s, the menu and `Externals`. It is concrete over `Compiled`, as `decl` is over `Declared`. States and transitions refer to each other by index; a transition source is `Entry` or a state and a target is a state or `Exit`.
+- A `PlayableController` is one `da.controller` in declaration order: its playable layer, `MergeMode`, priority, `PathMode`, the interned mask asset and an `AnimatorController`. An unwritten option takes its default there, not in the declaration. Every controller carries the whole animator parameter list, because a replaced Gesture layer still needs `GestureLeft` and merging by name is harmless.
 - Every error is collected rather than stopping at the first one. A layer or menu item that fails is dropped and the rest is still checked, so one run reports as much as it can. `TransformError` carries the `SourceLocation` of the reference that failed, falling back to the layer that holds it.
 - Parameters
     - The animator parameter list is every declared, provided and generated parameter in that order. Expression parameters are the declared ones whose scope is not `internal`; the default scope is `synced` and `save` defaults to `false`. Unspecified bit widths stay `Unspecified`.
@@ -197,7 +208,8 @@ return da.avatar({
 
 - v1 took a `Map<String, Asset>` ScriptableObject as compiler input. v2 reverses that: compilation needs nothing but the script and the symbols, and the resulting avatar enumerates what it requires.
 - `Externals` is that enumeration. Object paths, component types and assets each get an `ExternTable`, deduplicated, and the avatar body refers to them by index. Every entry carries `referenced_at`, so an unmet requirement is reported against the line that asked for it.
-- The client resolves the tables in index order and builds one array per kind, then reads the avatar body straight through it. No second compilation pass is involved.
+- `Externals.needs_relative_root` says whether any controller uses `PathMode::Relative`. It sits next to the tables because it is the same kind of request: something the client has to supply (the root object) before it can apply the avatar.
+- The client resolves the tables in index order and builds one array per kind, then reads the avatar body straight through it. No second compilation pass is involved. An object path is resolved against the avatar root or, for a relative controller, against the supplied root, so the same table entry may be looked up under both.
 - Resolving an asset is the client's job, as is checking that what it found matches the `asset_type` of a `Named` locator.
 - A dictionary ScriptableObject equivalent to v1's is still accepted, as one source of resolutions rather than a compiler input. For `AssetLocator::Named` the dictionary wins, and a project-wide search is used only when it hits exactly one asset.
 - Losing compile-time name checking is the deliberate cost. Reporting a failure at the right script line keeps it manageable.

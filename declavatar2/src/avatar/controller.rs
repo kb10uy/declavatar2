@@ -6,13 +6,32 @@ use crate::{
     },
     unity::{
         animation::InlineAnimation,
-        animator::{AnimatorParameter, BlendTreeType},
+        animator::{AnimatorParameter, BlendTreeType, MergeMode, PathMode},
         external::Asset,
     },
+    vrchat::playable_layer::PlayableLayer,
 };
 
 /// Reference to an animator parameter whose existence and type have been checked.
 pub type ParameterRef = <Compiled as Phase>::ParameterRef;
+
+/// A compiled controller together with how the client applies it to a playable layer.
+///
+/// Object paths inside the controller are read against the avatar root or, with `PathMode::Relative`,
+/// against a root the client supplies. A bound object written in a script is only a path, so the same
+/// path used from controllers of different modes names different objects.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlayableController {
+    pub playable: PlayableLayer,
+    pub mode: MergeMode,
+    pub priority: i32,
+    pub path_mode: PathMode,
+
+    /// Avatar mask the controller is applied with, if the script gave one.
+    pub mask: Option<Extern<Asset>>,
+
+    pub controller: AnimatorController,
+}
 
 /// Compiled animator controller.
 #[derive(Debug, Clone, Default, PartialEq)]

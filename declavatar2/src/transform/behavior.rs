@@ -111,10 +111,12 @@ mod tests {
             Avatar,
             avatar::Export,
             behavior::Content,
+            controller::Controller,
             layer::{GroupLayer, GroupOption, Layer, PuppetLayer, SwitchContent, SwitchLayer, SwitchSource},
             parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue},
         },
         unity::state::GenericStateBehavior,
+        vrchat::playable_layer::PlayableLayer,
         vrchat::state_behaviour::{TrackingControl, TrackingControlMode, TrackingControlTarget},
     };
 
@@ -147,40 +149,43 @@ mod tests {
                 parameter("Wink", PrimitiveParameterValue::Float { default: None, width: None }),
                 parameter("Weight", PrimitiveParameterValue::Float { default: None, width: None }),
             ],
-            fx_controller: vec![
-                Layer::Group(GroupLayer {
-                    name: "Expressions".into(),
-                    driven_by: Some("Emote".to_owned().into()),
-                    symmetric: None,
-                    default: None,
-                    options: ["smile", "angry"]
-                        .map(|name| GroupOption {
-                            name: name.into(),
-                            content: Content::new(),
-                            at: None,
-                        })
-                        .into(),
-                    at: None,
-                }),
-                Layer::Switch(SwitchLayer {
-                    name: "Hat".into(),
-                    source: Some(SwitchSource::Parameter("Hat".to_owned().into())),
-                    content: SwitchContent::Toggle(Content::new()),
-                    at: None,
-                }),
-                Layer::Switch(SwitchLayer {
-                    name: "Gated".into(),
-                    source: Some(SwitchSource::Gate("HatShown".to_owned().into())),
-                    content: SwitchContent::Toggle(Content::new()),
-                    at: None,
-                }),
-                Layer::Puppet(PuppetLayer {
-                    name: "Wink".into(),
-                    driven_by: None,
-                    keyframes: vec![],
-                    at: None,
-                }),
-            ],
+            controllers: vec![Controller::new(
+                PlayableLayer::Fx,
+                vec![
+                    Layer::Group(GroupLayer {
+                        name: "Expressions".into(),
+                        driven_by: Some("Emote".to_owned().into()),
+                        symmetric: None,
+                        default: None,
+                        options: ["smile", "angry"]
+                            .map(|name| GroupOption {
+                                name: name.into(),
+                                content: Content::new(),
+                                at: None,
+                            })
+                            .into(),
+                        at: None,
+                    }),
+                    Layer::Switch(SwitchLayer {
+                        name: "Hat".into(),
+                        source: Some(SwitchSource::Parameter("Hat".to_owned().into())),
+                        content: SwitchContent::Toggle(Content::new()),
+                        at: None,
+                    }),
+                    Layer::Switch(SwitchLayer {
+                        name: "Gated".into(),
+                        source: Some(SwitchSource::Gate("HatShown".to_owned().into())),
+                        content: SwitchContent::Toggle(Content::new()),
+                        at: None,
+                    }),
+                    Layer::Puppet(PuppetLayer {
+                        name: "Wink".into(),
+                        driven_by: None,
+                        keyframes: vec![],
+                        at: None,
+                    }),
+                ],
+            )],
             exports: vec![Export::Gate {
                 name: "HatShown".into(),
                 at: None,

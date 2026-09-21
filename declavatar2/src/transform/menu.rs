@@ -116,12 +116,14 @@ mod tests {
         decl::{
             Avatar,
             behavior::Content,
+            controller::Controller,
             layer::{GroupLayer, GroupOption, Layer, PuppetLayer, SwitchContent, SwitchLayer},
             menu::{FourAxes, TwoAxes},
             parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue},
         },
         transform::layer::located_at,
         unity::value::AnimatedValue,
+        vrchat::playable_layer::PlayableLayer,
     };
 
     fn parameter(name: &str, value: PrimitiveParameterValue) -> Parameter {
@@ -142,32 +144,35 @@ mod tests {
                 parameter("Wink", PrimitiveParameterValue::Float { default: None, width: None }),
                 parameter("Move", PrimitiveParameterValue::Float { default: None, width: None }),
             ],
-            fx_controller: vec![
-                Layer::Group(GroupLayer {
-                    name: "Expressions".into(),
-                    driven_by: Some("Emote".to_owned().into()),
-                    symmetric: None,
-                    default: None,
-                    options: vec![GroupOption {
-                        name: "smile".into(),
-                        content: Content::new(),
+            controllers: vec![Controller::new(
+                PlayableLayer::Fx,
+                vec![
+                    Layer::Group(GroupLayer {
+                        name: "Expressions".into(),
+                        driven_by: Some("Emote".to_owned().into()),
+                        symmetric: None,
+                        default: None,
+                        options: vec![GroupOption {
+                            name: "smile".into(),
+                            content: Content::new(),
+                            at: None,
+                        }],
                         at: None,
-                    }],
-                    at: None,
-                }),
-                Layer::Switch(SwitchLayer {
-                    name: "Hat".into(),
-                    source: None,
-                    content: SwitchContent::Toggle(Content::new()),
-                    at: None,
-                }),
-                Layer::Puppet(PuppetLayer {
-                    name: "Wink".into(),
-                    driven_by: None,
-                    keyframes: vec![],
-                    at: None,
-                }),
-            ],
+                    }),
+                    Layer::Switch(SwitchLayer {
+                        name: "Hat".into(),
+                        source: None,
+                        content: SwitchContent::Toggle(Content::new()),
+                        at: None,
+                    }),
+                    Layer::Puppet(PuppetLayer {
+                        name: "Wink".into(),
+                        driven_by: None,
+                        keyframes: vec![],
+                        at: None,
+                    }),
+                ],
+            )],
             ..Avatar::default()
         };
         Context::collect(&declaration).0

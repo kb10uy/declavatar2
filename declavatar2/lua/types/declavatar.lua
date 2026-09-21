@@ -22,7 +22,10 @@ local da = {}
 --- Entry of the `parameters` block.
 ---@class da.Parameter
 
---- Entry of the `fx_controller` block.
+--- Entry of the `controllers` block: layers bound for one playable layer.
+---@class da.Controller
+
+--- Layer inside a controller.
 ---@class da.Layer
 
 --- Default state of a group layer.
@@ -92,6 +95,15 @@ local da = {}
 --- Set of parameters that the platform defines.
 ---@alias da.ProvidedGroup "VRChat"
 
+--- Playable layer of the avatar descriptor a controller is bound for.
+---@alias da.PlayableLayer "base"|"additive"|"gesture"|"action"|"fx"|"sitting"|"tpose"|"ikpose"
+
+--- Whether a controller is appended to the playable layer or replaces it as a whole.
+---@alias da.MergeMode "append"|"replace"
+
+--- What the object paths of a controller start at: the avatar root, or a root the client supplies.
+---@alias da.PathMode "absolute"|"relative"
+
 --- What tracking control does to the parts it names.
 ---@alias da.TrackingMode "tracking"|"animation"
 
@@ -129,6 +141,7 @@ local da = {}
 -- conditional element. Nested lists are an error; use `da.flatten` instead.
 
 ---@alias da.ParameterList (da.Parameter|false)[]
+---@alias da.ControllerList (da.Controller|false)[]
 ---@alias da.LayerList (da.Layer|false)[]
 ---@alias da.MenuItemList (da.MenuItem|false)[]
 ---@alias da.ExportList (da.Export|false)[]
@@ -152,7 +165,7 @@ local da = {}
 --- Blocks of an avatar.
 ---@class da.AvatarBlocks
 ---@field parameters? da.ParameterList
----@field fx_controller? da.LayerList
+---@field controllers? da.ControllerList
 ---@field menu? da.MenuItemList
 ---@field exports? da.ExportList
 
@@ -172,6 +185,13 @@ local da = {}
 ---@field width? integer Positive bit count.
 ---@field scope? da.Scope
 ---@field save? boolean
+
+--- How a controller is applied. Every option has a default, so the table may be left out.
+---@class da.ControllerOptions
+---@field mode? da.MergeMode Defaults to `"append"`.
+---@field priority? integer Order among controllers bound for the same playable layer. Defaults to `0`.
+---@field path_mode? da.PathMode Defaults to `"absolute"`.
+---@field mask? da.Asset Avatar mask the controller is applied with.
 
 ---@class da.GroupLayerOptions
 ---@field driven_by? string
@@ -478,6 +498,19 @@ function da.tracking(mode, targets) end
 --------------------------------------------------------------------------------
 -- Layers
 --------------------------------------------------------------------------------
+
+--- Layers bound for one playable layer, with how the client applies them.
+---
+--- The same playable layer may be written more than once; each entry is applied on its own,
+--- ordered by `priority`. Layer names are unique across every controller of the avatar.
+--- With `path_mode = "relative"`, every object path in the controller starts at a root the
+--- client supplies instead of the avatar root.
+---@param playable da.PlayableLayer
+---@param options da.ControllerOptions
+---@param layers da.LayerList
+---@return da.Controller
+---@overload fun(playable: da.PlayableLayer, layers: da.LayerList): da.Controller
+function da.controller(playable, options, layers) end
 
 --- Default state of a group layer, which every option inherits the entries it lacks from.
 ---@param content da.ContentList

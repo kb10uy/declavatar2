@@ -6,6 +6,7 @@ use declavatar2::{
     decl::{
         Avatar,
         behavior::{Animation, Content, Drive},
+        controller::Controller,
         layer::{GroupLayer, GroupOption, Layer, SwitchContent, SwitchLayer, SwitchSource},
         menu::MenuItem,
         parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup},
@@ -16,6 +17,7 @@ use declavatar2::{
         animator::{AnimatedGameObjectProperty, AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget},
         value::AnimatedValue,
     },
+    vrchat::playable_layer::PlayableLayer,
 };
 use rstest::*;
 
@@ -32,12 +34,14 @@ return da.avatar({
         da.int("Emote", { default = 42 }),
         hat and da.bool("Hat", { scope = "local" }),
     },
-    fx_controller = {
-        da.group_layer("Expressions", { driven_by = "Emote" }, {
-            da.default { Face:shape("eyelid_L", 0.3) },
-            da.option("smile", { Face:shape("smile"), Face:shape("eye_joy", 0.5) }),
+    controllers = {
+        da.controller("fx", {
+            da.group_layer("Expressions", { driven_by = "Emote" }, {
+                da.default { Face:shape("eyelid_L", 0.3) },
+                da.option("smile", { Face:shape("smile"), Face:shape("eye_joy", 0.5) }),
+            }),
+            hat and da.switch_layer("Hat", { driven_by = "Hat" }, { da.object("Hat"):active() }),
         }),
-        hat and da.switch_layer("Hat", { driven_by = "Hat" }, { da.object("Hat"):active() }),
     },
     menu = {
         hat and da.toggle("Hat", da.drive_switch("Hat")),
@@ -89,9 +93,9 @@ fn expressions_layer() -> Layer {
         options: vec![GroupOption {
             name: "smile".into(),
             content: animation_only([shape("smile", 1.0), shape("eye_joy", 0.5)]),
-            at: at(15),
+            at: at(16),
         }],
-        at: at(13),
+        at: at(14),
     })
 }
 
@@ -100,8 +104,15 @@ fn hat_layer() -> Layer {
         name: "Hat".into(),
         source: Some(SwitchSource::Parameter(Unresolved::new("Hat".into()))),
         content: SwitchContent::Toggle(animation_only([active("Hat", true)])),
-        at: at(17),
+        at: at(18),
     })
+}
+
+fn fx_controller(layers: Vec<Layer>) -> Controller {
+    Controller {
+        at: at(13),
+        ..Controller::new(PlayableLayer::Fx, layers)
+    }
 }
 
 fn run(symbols: &[&str]) -> Avatar {
@@ -136,7 +147,7 @@ fn the_documented_example_declares_the_avatar_it_describes() {
                     at: at(10),
                 }),
             ],
-            fx_controller: vec![expressions_layer(), hat_layer()],
+            controllers: vec![fx_controller(vec![expressions_layer(), hat_layer()])],
             menu: vec![MenuItem::Toggle {
                 name: "Hat".into(),
                 drive: Drive::Switch {
@@ -169,7 +180,7 @@ fn a_symbol_the_host_withholds_drops_everything_guarded_by_it() {
             }),
         ],
     );
-    assert_eq!(declared.fx_controller, vec![expressions_layer()]);
+    assert_eq!(declared.controllers, vec![fx_controller(vec![expressions_layer()])]);
     assert!(declared.menu.is_empty());
 }
 
@@ -201,7 +212,9 @@ fn a_mistake_is_reported_with_the_line_that_made_it(#[case] expression: &str, #[
 #[case::puppet("da.puppet_layer", "{ da.keyframe(0, {}), da.keyframe(1, {}) }")]
 #[case::raw("da.raw.layer", "{ da.raw.state('S') }")]
 fn layer_options_can_be_omitted(#[case] builder: &str, #[case] children: &str, #[values("", "nil, ")] options: &str) {
-    let script = |options: &str| format!("local da = require 'declavatar'\nreturn da.avatar({{ fx_controller = {{ {builder}('L', {options}{children}) }} }})");
+    let script = |options: &str| {
+        format!("local da = require 'declavatar'\nreturn da.avatar({{ controllers = {{ da.controller('fx', {{ {builder}('L', {options}{children}) }}) }} }})")
+    };
     let explicit = evaluate(&script("{}, "), "avatar.lua", &EvaluateOptions::new()).unwrap();
     let omitted = evaluate(&script(options), "avatar.lua", &EvaluateOptions::new()).unwrap();
     assert_eq!(omitted, explicit);

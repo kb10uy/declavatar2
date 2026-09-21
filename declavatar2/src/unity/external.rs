@@ -2,7 +2,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::external::{ExternKind, ExternTable};
 
-/// Path to a GameObject relative to the avatar root, such as `Armature/Hips`.
+/// Path to a GameObject, such as `Armature/Hips`.
+///
+/// It starts at the avatar root, or at the root the client supplies when the controller that
+/// refers to it uses relative paths. The table only interns the string; which root applies is
+/// decided per controller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObjectPath {}
 
@@ -39,10 +43,14 @@ pub enum AssetLocator {
     Named { asset_type: String, name: String },
 }
 
-/// Every external reference table of an avatar.
+/// Everything an avatar asks the client for: every external reference table, and whether
+/// a root for relative paths has to be given.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Externals {
     pub object_paths: ExternTable<ObjectPath>,
     pub component_types: ExternTable<ComponentType>,
     pub assets: ExternTable<Asset>,
+
+    /// Whether any controller uses `PathMode::Relative`, so the client must supply the root its paths start at.
+    pub needs_relative_root: bool,
 }

@@ -1,4 +1,5 @@
 pub mod behavior;
+pub mod controller;
 pub mod layer;
 pub mod menu;
 pub mod parameter;
@@ -49,6 +50,7 @@ fn register_root(lua: &Lua, da: &Table, symbols: &Rc<BTreeSet<String>>) -> LuaRe
     da.set("quat", lua.create_function(quat)?)?;
 
     behavior::register(lua, da)?;
+    controller::register(lua, da)?;
     layer::register(lua, da)?;
     menu::register(lua, da)?;
     parameter::register(lua, da)?;
@@ -63,19 +65,19 @@ fn avatar(lua: &Lua, blocks: Option<Table>) -> LuaResult<node::Avatar> {
 
     let mut options = Options::new(OWNER, blocks);
     let parameters = options.take::<Table>("parameters")?;
-    let fx_controller = options.take::<Table>("fx_controller")?;
+    let controllers = options.take::<Table>("controllers")?;
     let menu = options.take::<Table>("menu")?;
     let exports = options.take::<Table>("exports")?;
     options.finish()?;
 
     let parameters = block::<node::Parameter, _>(lua, "da.avatar: parameters", parameters)?;
-    let fx_controller = block::<node::Layer, _>(lua, "da.avatar: fx_controller", fx_controller)?;
+    let controllers = block::<node::Controller, _>(lua, "da.avatar: controllers", controllers)?;
     let menu = block::<node::MenuItem, _>(lua, "da.avatar: menu", menu)?;
     let exports = block::<node::Export, _>(lua, "da.avatar: exports", exports)?;
 
     Ok(node::Avatar(decl::Avatar {
         parameters,
-        fx_controller,
+        controllers,
         menu,
         exports,
     }))
@@ -126,6 +128,7 @@ mod definition_tests {
         EvaluateOptions,
         api::{
             behavior::{TRACKING_MODES, TRACKING_TARGETS},
+            controller::{MERGE_MODES, PATH_MODES, PLAYABLE_LAYERS},
             parameter::{PROVIDED_GROUPS, SCOPES},
             raw::{DIRECT_TREE_TYPE, PARAMETRIC_TREE_TYPES},
         },
@@ -250,6 +253,9 @@ mod definition_tests {
         assert_eq!(documented_alias(DECLAVATAR, "da.ProvidedGroup"), accepted(PROVIDED_GROUPS));
         assert_eq!(documented_alias(DECLAVATAR, "da.TrackingMode"), accepted(TRACKING_MODES));
         assert_eq!(documented_alias(DECLAVATAR, "da.TrackingTarget"), accepted(TRACKING_TARGETS));
+        assert_eq!(documented_alias(DECLAVATAR, "da.PlayableLayer"), accepted(PLAYABLE_LAYERS));
+        assert_eq!(documented_alias(DECLAVATAR, "da.MergeMode"), accepted(MERGE_MODES));
+        assert_eq!(documented_alias(DECLAVATAR, "da.PathMode"), accepted(PATH_MODES));
 
         let mut tree_types = accepted(PARAMETRIC_TREE_TYPES);
         tree_types.insert(DIRECT_TREE_TYPE.to_owned());

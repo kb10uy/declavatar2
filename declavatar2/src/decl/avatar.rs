@@ -1,15 +1,22 @@
 use crate::{
     core::resolution::{SourceLocation, Unresolved},
-    decl::{layer::Layer, menu::MenuItem, parameter::Parameter},
+    decl::{controller::Controller, layer::Layer, menu::MenuItem, parameter::Parameter},
 };
 
 /// Root of a declaration, what one script returns.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Avatar {
     pub parameters: Vec<Parameter>,
-    pub fx_controller: Vec<Layer>,
+    pub controllers: Vec<Controller>,
     pub menu: Vec<MenuItem>,
     pub exports: Vec<Export>,
+}
+
+impl Avatar {
+    /// Every layer of every controller, in the order they are written.
+    pub fn layers(&self) -> impl Iterator<Item = &Layer> {
+        self.controllers.iter().flat_map(|controller| controller.layers.iter())
+    }
 }
 
 /// Entry of the `exports` block.
@@ -39,6 +46,7 @@ mod tests {
             animator::{AnimatedGameObjectProperty, AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget},
             value::AnimatedValue,
         },
+        vrchat::playable_layer::PlayableLayer,
     };
 
     fn shape(path: &str, name: &str, value: f64) -> FixedAnimationEntry<Declared> {
@@ -84,35 +92,38 @@ mod tests {
                     at: None,
                 }),
             ],
-            fx_controller: vec![
-                Layer::Group(GroupLayer {
-                    name: "Expressions".into(),
-                    driven_by: Some(Unresolved::new("Emote".into())),
-                    symmetric: None,
-                    default: Some(Content {
-                        animation: Animation::from([shape("Face", "eyelid_L", 0.3)]),
-                        behaviors: vec![],
-                    }),
-                    options: vec![GroupOption {
-                        name: "smile".into(),
-                        content: Content {
-                            animation: Animation::from([shape("Face", "smile", 1.0), shape("Face", "eye_joy", 0.5)]),
+            controllers: vec![Controller::new(
+                PlayableLayer::Fx,
+                vec![
+                    Layer::Group(GroupLayer {
+                        name: "Expressions".into(),
+                        driven_by: Some(Unresolved::new("Emote".into())),
+                        symmetric: None,
+                        default: Some(Content {
+                            animation: Animation::from([shape("Face", "eyelid_L", 0.3)]),
                             behaviors: vec![],
-                        },
+                        }),
+                        options: vec![GroupOption {
+                            name: "smile".into(),
+                            content: Content {
+                                animation: Animation::from([shape("Face", "smile", 1.0), shape("Face", "eye_joy", 0.5)]),
+                                behaviors: vec![],
+                            },
+                            at: None,
+                        }],
                         at: None,
-                    }],
-                    at: None,
-                }),
-                Layer::Switch(SwitchLayer {
-                    name: "Hat".into(),
-                    source: Some(SwitchSource::Parameter(Unresolved::new("Hat".into()))),
-                    content: SwitchContent::Toggle(Content {
-                        animation: Animation::from([active("Hat", true)]),
-                        behaviors: vec![],
                     }),
-                    at: None,
-                }),
-            ],
+                    Layer::Switch(SwitchLayer {
+                        name: "Hat".into(),
+                        source: Some(SwitchSource::Parameter(Unresolved::new("Hat".into()))),
+                        content: SwitchContent::Toggle(Content {
+                            animation: Animation::from([active("Hat", true)]),
+                            behaviors: vec![],
+                        }),
+                        at: None,
+                    }),
+                ],
+            )],
             menu: vec![MenuItem::Toggle {
                 name: "Hat".into(),
                 drive: Drive::Switch {
@@ -129,10 +140,11 @@ mod tests {
         let avatar = example_avatar();
 
         assert_eq!(avatar.parameters.len(), 3);
-        assert_eq!(avatar.fx_controller.iter().map(Layer::name).collect::<Vec<_>>(), ["Expressions", "Hat"]);
+        assert_eq!(avatar.controllers.len(), 1);
+        assert_eq!(avatar.layers().map(Layer::name).collect::<Vec<_>>(), ["Expressions", "Hat"]);
         assert_eq!(avatar.menu.iter().map(MenuItem::name).collect::<Vec<_>>(), ["Hat"]);
 
-        let Layer::Group(group) = &avatar.fx_controller[0] else {
+        let Layer::Group(group) = &avatar.controllers[0].layers[0] else {
             panic!("first layer should be a group layer");
         };
         assert_eq!(group.options[0].content.animation.entries().count(), 2);

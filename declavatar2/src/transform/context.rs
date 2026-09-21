@@ -46,7 +46,7 @@ impl Context {
                 errors.push(error);
             }
         }
-        for layer in &declaration.fx_controller {
+        for layer in declaration.layers() {
             if let Err(error) = context.collect_layer(layer) {
                 errors.push(error);
             }
@@ -387,10 +387,14 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::decl::{
-        Avatar,
-        behavior::Content,
-        layer::{BlendLayer, GroupLayer, GroupOption, PuppetLayer, SwitchContent},
+    use crate::{
+        decl::{
+            Avatar,
+            behavior::Content,
+            controller::Controller,
+            layer::{BlendLayer, GroupLayer, GroupOption, PuppetLayer, SwitchContent},
+        },
+        vrchat::playable_layer::PlayableLayer,
     };
 
     fn at(line: u32) -> Option<SourceLocation> {
@@ -679,20 +683,23 @@ mod tests {
     #[rstest]
     fn layers_are_recorded_with_what_drives_them() {
         let (context, errors) = collect(Avatar {
-            fx_controller: vec![
-                group("Expressions", Some("Emote"), &["smile", "angry"], 10),
-                Layer::Switch(SwitchLayer {
-                    name: "Hat".into(),
-                    source: None,
-                    content: SwitchContent::Toggle(Content::new()),
-                    at: at(11),
-                }),
-                Layer::Blend(BlendLayer {
-                    name: "Face".into(),
-                    puppets: vec![puppet("Wink", 13), puppet("Brow", 14)],
-                    at: at(12),
-                }),
-            ],
+            controllers: vec![Controller::new(
+                PlayableLayer::Fx,
+                vec![
+                    group("Expressions", Some("Emote"), &["smile", "angry"], 10),
+                    Layer::Switch(SwitchLayer {
+                        name: "Hat".into(),
+                        source: None,
+                        content: SwitchContent::Toggle(Content::new()),
+                        at: at(11),
+                    }),
+                    Layer::Blend(BlendLayer {
+                        name: "Face".into(),
+                        puppets: vec![puppet("Wink", 13), puppet("Brow", 14)],
+                        at: at(12),
+                    }),
+                ],
+            )],
             ..Avatar::default()
         });
 
@@ -723,7 +730,7 @@ mod tests {
     #[rstest]
     fn a_duplicate_layer_is_reported_at_the_second_declaration() {
         let (_, errors) = collect(Avatar {
-            fx_controller: vec![group("A", None, &[], 1), group("A", None, &[], 2)],
+            controllers: vec![Controller::new(PlayableLayer::Fx, vec![group("A", None, &[], 1), group("A", None, &[], 2)])],
             ..Avatar::default()
         });
 
@@ -733,7 +740,7 @@ mod tests {
     #[rstest]
     fn a_duplicate_option_is_reported() {
         let (_, errors) = collect(Avatar {
-            fx_controller: vec![group("A", None, &["x", "x"], 1)],
+            controllers: vec![Controller::new(PlayableLayer::Fx, vec![group("A", None, &["x", "x"], 1)])],
             ..Avatar::default()
         });
 
