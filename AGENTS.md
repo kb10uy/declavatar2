@@ -22,7 +22,7 @@ The overall architecture remains Rust core + C FFI + any language client (mainly
 Lua script
     -> [mlua interpreter] -> Declaration
     -> [Transformer] -> Avatar (compiled, valid avatar data)
-    -> [MessagePack serialization] -> consumed by clients
+    -> [interop encoding] -> blob consumed by clients
 ```
 
 - **Keep the two-layer model (Declaration / Avatar).**
@@ -196,7 +196,7 @@ return da.avatar({
     - Group and switch transitions have duration `0.0`. Raw transitions preserve the written `duration`, defaulting to `0.0`.
     - Write Defaults is on only for the generated state of a blend layer; group, switch, puppet and raw states use off. The raw Lua API does not expose a Write Defaults option.
 - Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
-- Not done yet: serialization of the complete compiled model (`AnimatedValue` and the animator structures do not derive `Serialize`), the C FFI compile/blob API, the Unity client, Lua/declaration support for keyed curves, and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
+- Not done yet: the `interop` encoder and decoder for the compiled model, the C FFI compile/blob API, the Unity client, Lua/declaration support for keyed curves, and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
 
 ### Animation Model
 
@@ -207,11 +207,14 @@ return da.avatar({
 
 ### Interop Format
 
-- Use **MessagePack** instead of JSON used in v1.
-- Rust side: `rmp-serde` (direct output from serde `Serialize`).
-- C# side: `MessagePack-CSharp` (with Source Generator support).
-- Simplify the C FFI API to a single compile -> MessagePack blob flow.
-- These are target interop decisions. `da2/src/lib.rs` is currently empty; no exported compile function or complete avatar MessagePack payload exists yet.
+- The FFI hands the client one byte blob per compile: a fixed positional format of our own, specified in [assets/interop-format.md](assets/interop-format.md). That document is the source of truth for the byte layout; this section records only the decisions behind it.
+- A blob is a 16-byte header followed by a payload with no field names, no padding and no self-description beyond enum discriminators. The header carries a magic (`"DA2a"` for a compiled avatar, `"DA2d"` for diagnostics), a `schema_version` for the encoding rules and a `data_version` for the payload layout of that kind.
+- A successful compile returns an avatar blob and a failed one returns a diagnostics blob. The two never share a call, so the magic alone tells them apart and no kind field exists.
+- Versions are matched exactly on both sides. The native library and the client ship together and blobs are never persisted, so the versions exist to make a mismatch a clear error, not to keep old layouts readable. Any payload change, including a new enum variant, bumps `data_version`; any change to the encoding rules bumps `schema_version`. A golden-bytes test guards against bumping being forgotten.
+- Rust side: a hand-written `Encode` / `Decode` per type in a `declavatar2::interop` module, with explicit discriminator constants. `serde` and `rmp-serde` are not used; the remaining `Serialize` derives and the `StateBehavior::serialize` method are to be removed with them.
+- C# side: a hand-written reader mirroring the Rust encoder one to one. No serialization library dependency.
+- Externals come first in the avatar payload so the client can resolve every table before reading the body that indexes into them.
+- `da2/src/lib.rs` is currently empty; no exported compile function or encoder exists yet.
 
 ### External References
 

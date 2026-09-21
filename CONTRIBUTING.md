@@ -33,7 +33,7 @@ Thanks for contributing to declavatar2!
 ## Testing Guidance
 
 - Add unit tests for parser/transform behavior changes.
-- For serialization changes, include a test that verifies expected MessagePack roundtrip shape where feasible.
+- For interop format changes, add or update a round-trip test, regenerate the golden blob, and bump the matching version in `assets/interop-format.md`.
 
 ## Security and Safety
 
