@@ -1,8 +1,7 @@
 use nalgebra::{UnitQuaternion, Vector2, Vector3, Vector4};
-use serde::{Deserialize, Serialize};
 
 /// Represents types of values that can be animated within Unity Animator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AnimatedValueType {
     Float,
     Int,

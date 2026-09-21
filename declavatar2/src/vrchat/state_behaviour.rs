@@ -52,10 +52,6 @@ impl<Ph: Phase> StateBehavior for ParameterDrive<Ph> {
     fn clone(&self) -> Box<dyn StateBehavior> {
         Box::new(Clone::clone(self))
     }
-
-    fn serialize(&self) -> Vec<u8> {
-        todo!();
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,9 +87,5 @@ impl StateBehavior for TrackingControl {
 
     fn clone(&self) -> Box<dyn StateBehavior> {
         Box::new(Clone::clone(self))
-    }
-
-    fn serialize(&self) -> Vec<u8> {
-        todo!();
     }
 }

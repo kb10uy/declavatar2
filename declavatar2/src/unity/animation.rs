@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -54,7 +53,7 @@ impl<Ph: Phase> Default for KeyedAnimation<Ph> {
 
 /// Clip-level settings that affect runtime playback.
 /// `length` is in seconds; normalized time `1.0` of every curve maps to it.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClipAttributes {
     pub length: f64,
     pub loop_time: bool,
@@ -119,7 +118,7 @@ pub struct Keyframe<R> {
 
 /// How a segment progresses from its starting keyframe to the next one.
 /// `Bezier` follows the CSS `cubic-bezier(x1, y1, x2, y2)` convention over the segment.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Interpolation {
     Constant,
     Linear,

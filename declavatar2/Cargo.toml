@@ -8,10 +8,8 @@ edition.workspace = true
 [dependencies]
 mlua = { workspace = true }
 nalgebra = { workspace = true }
-serde = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 either = { workspace = true }
-rmp-serde = { workspace = true }
 rstest = { workspace = true }

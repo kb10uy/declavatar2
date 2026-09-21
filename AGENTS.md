@@ -211,7 +211,7 @@ return da.avatar({
 - A blob is a 16-byte header followed by a payload with no field names, no padding and no self-description beyond enum discriminators. The header carries a magic (`"DA2a"` for a compiled avatar, `"DA2d"` for diagnostics), a `schema_version` for the encoding rules and a `data_version` for the payload layout of that kind.
 - A successful compile returns an avatar blob and a failed one returns a diagnostics blob. The two never share a call, so the magic alone tells them apart and no kind field exists.
 - Versions are matched exactly on both sides. The native library and the client ship together and blobs are never persisted, so the versions exist to make a mismatch a clear error, not to keep old layouts readable. Any payload change, including a new enum variant, bumps `data_version`; any change to the encoding rules bumps `schema_version`. A golden-bytes test guards against bumping being forgotten.
-- Rust side: a hand-written `Encode` / `Decode` per type in a `declavatar2::interop` module, with explicit discriminator constants. `serde` and `rmp-serde` are not used; the remaining `Serialize` derives and the `StateBehavior::serialize` method are to be removed with them.
+- Rust side: a hand-written `Encode` / `Decode` per type in a `declavatar2::interop` module, with explicit discriminator constants. `serde` and `rmp-serde` are not dependencies.
 - C# side: a hand-written reader mirroring the Rust encoder one to one. No serialization library dependency.
 - Externals come first in the avatar payload so the client can resolve every table before reading the body that indexes into them.
 - `da2/src/lib.rs` is currently empty; no exported compile function or encoder exists yet.

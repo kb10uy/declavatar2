@@ -11,10 +11,6 @@ pub trait StateBehavior: Debug {
     /// Clones this definition.
     /// This is apart of the `Clone` trait due to its `Sized` requirement, which leads to dyn-incompatible.
     fn clone(&self) -> Box<dyn StateBehavior>;
-
-    /// Serializes this definition data into a byte array.
-    /// Its representation relies on each state behavior's specific data layout.
-    fn serialize(&self) -> Vec<u8>;
 }
 
 impl Clone for Box<dyn StateBehavior> {
@@ -50,10 +46,6 @@ impl StateBehavior for GenericStateBehavior {
 
     fn clone(&self) -> Box<dyn StateBehavior> {
         Box::new(Clone::clone(self))
-    }
-
-    fn serialize(&self) -> Vec<u8> {
-        todo!();
     }
 }
 

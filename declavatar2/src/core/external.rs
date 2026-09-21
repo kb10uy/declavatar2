@@ -6,8 +6,6 @@ use std::{
     marker::PhantomData,
 };
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
 use crate::core::resolution::{SourceLocation, Unresolved};
 
 /// Marker type for a kind of reference whose existence can only be checked by the client.
@@ -73,21 +71,8 @@ impl<K: ExternKind> Hash for Extern<K> {
     }
 }
 
-impl<K: ExternKind> Serialize for Extern<K> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u32(self.index)
-    }
-}
-
-impl<'de, K: ExternKind> Deserialize<'de> for Extern<K> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        u32::deserialize(deserializer).map(|index| Self { index, _kind: PhantomData })
-    }
-}
-
 /// An entry of `ExternTable`: the value the client should look up, and every place in the script that referenced it.
-#[derive(Debug, Clone, Serialize)]
-#[serde(bound(serialize = "K::Value: Serialize"))]
+#[derive(Debug, Clone)]
 pub struct ExternEntry<K: ExternKind> {
     pub value: K::Value,
     pub referenced_at: Vec<SourceLocation>,
@@ -103,11 +88,9 @@ impl<K: ExternKind> Eq for ExternEntry<K> {}
 
 /// Deduplicated table of external references of one kind.
 /// Serialized as the plain list of entries; `Extern` values index into it.
-#[derive(Debug, Clone, Serialize)]
-#[serde(transparent, bound(serialize = "K::Value: Serialize"))]
+#[derive(Debug, Clone)]
 pub struct ExternTable<K: ExternKind> {
     entries: Vec<ExternEntry<K>>,
-    #[serde(skip)]
     lookup: BTreeMap<K::Value, u32>,
 }
 
@@ -225,37 +208,6 @@ mod tests {
         let body = table.intern(Unresolved::located("Body".into(), at(5)));
 
         assert_eq!(table.get(body).referenced_at, vec![at(3), at(5)]);
-    }
-
-    #[rstest]
-    fn extern_serializes_as_index() {
-        let mut table = ExternTable::<TestKind>::new();
-        table.intern(Unresolved::new("Body".into()));
-        let hips = table.intern(Unresolved::new("Armature/Hips".into()));
-
-        let bytes = rmp_serde::to_vec(&hips).unwrap();
-        assert_eq!(bytes, rmp_serde::to_vec(&1u32).unwrap());
-        let restored: Extern<TestKind> = rmp_serde::from_slice(&bytes).unwrap();
-        assert_eq!(restored, hips);
-    }
-
-    #[rstest]
-    fn table_serializes_as_entry_list() {
-        let mut table = ExternTable::<TestKind>::new();
-        table.intern(Unresolved::located("Body".into(), at(2)));
-        table.intern(Unresolved::new("Armature/Hips".into()));
-
-        let expected = vec![
-            ExternEntry::<TestKind> {
-                value: "Body".into(),
-                referenced_at: vec![at(2)],
-            },
-            ExternEntry::<TestKind> {
-                value: "Armature/Hips".into(),
-                referenced_at: vec![],
-            },
-        ];
-        assert_eq!(rmp_serde::to_vec(&table).unwrap(), rmp_serde::to_vec(&expected).unwrap());
     }
 
     #[rstest]

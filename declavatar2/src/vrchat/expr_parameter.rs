@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 use crate::unity::AnimatedValueType;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -64,7 +62,7 @@ impl ExpressionParameterTypeDefault {
 
 /// Provided parameters by VRChat.
 /// See [VRChat's documentation](https://creators.vrchat.com/avatars/animator-parameters/#built-in-parameters) about details.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VrchatProvidedParameter {
     IsLocal,
     PreviewMode,
@@ -82,10 +80,8 @@ pub enum VrchatProvidedParameter {
     Upright,
     Grounded,
     Seated,
-    #[serde(rename = "AFK")]
     Afk,
     TrackingType,
-    #[serde(rename = "VRMode")]
     VrMode,
     MuteSelf,
     InStation,
@@ -220,12 +216,5 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), count);
-    }
-
-    #[rstest]
-    fn the_name_matches_the_serialized_form() {
-        for parameter in VrchatProvidedParameter::ALL {
-            assert_eq!(rmp_serde::to_vec(parameter).unwrap(), rmp_serde::to_vec(parameter.name()).unwrap());
-        }
     }
 }

@@ -1,5 +1,3 @@
-use serde::Serialize;
-
 use crate::{core::phase::Phase, unity::value::AnimatedValueType};
 
 pub trait Target {
@@ -8,8 +6,7 @@ pub trait Target {
 }
 
 /// Target specifier for an animated property.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(bound(serialize = "Ph::ParameterRef: Serialize, Ph::ObjectPath: Serialize, Ph::ComponentType: Serialize"))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AnimatedTarget<Ph: Phase> {
     /// Animator itself. Mainly used for AAPs.
     AnimatorSelf(AnimatedAnimatorTarget<Ph>),
@@ -36,15 +33,13 @@ impl<Ph: Phase> Target for AnimatedTarget<Ph> {
 }
 
 /// Target specifier object for Animator properties.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(bound(serialize = "Ph::ParameterRef: Serialize"))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AnimatedAnimatorTarget<Ph: Phase> {
     pub property: AnimatedAnimatorProperty<Ph>,
 }
 
 /// Represents animated property on an Animator component.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(bound(serialize = "Ph::ParameterRef: Serialize"))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AnimatedAnimatorProperty<Ph: Phase> {
     /// Float parameter value.
     ParameterFloatValue { name: Ph::ParameterRef },
@@ -59,15 +54,14 @@ impl<Ph: Phase> Target for AnimatedAnimatorTarget<Ph> {
 }
 
 /// Target specifier object for GameObject properties.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(bound(serialize = "Ph::ObjectPath: Serialize"))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AnimatedGameObjectTarget<Ph: Phase> {
     pub path: Ph::ObjectPath,
     pub property: AnimatedGameObjectProperty,
 }
 
 /// Represents animated property of a GameObject.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AnimatedGameObjectProperty {
     /// Active/Inactive state.
     Active,
@@ -98,8 +92,7 @@ impl<Ph: Phase> Target for AnimatedGameObjectTarget<Ph> {
 }
 
 /// Target specifier object for Renderers.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(bound(serialize = "Ph::ObjectPath: Serialize"))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AnimatedRendererTarget<Ph: Phase> {
     pub path: Ph::ObjectPath,
     pub renderer_type: String,
@@ -107,7 +100,7 @@ pub struct AnimatedRendererTarget<Ph: Phase> {
 }
 
 /// Represents animated property of a Renderer.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AnimatedRendererProperty {
     /// Enabled/disabled state.
     Enabled,
@@ -137,8 +130,7 @@ impl<Ph: Phase> Target for AnimatedRendererTarget<Ph> {
 }
 
 /// Target specifier object for arbitrary Unity components.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(bound(serialize = "Ph::ObjectPath: Serialize, Ph::ComponentType: Serialize"))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AnimatedComponentTarget<Ph: Phase> {
     pub path: Ph::ObjectPath,
     pub component_type: Ph::ComponentType,
@@ -147,7 +139,7 @@ pub struct AnimatedComponentTarget<Ph: Phase> {
 }
 
 /// Represents animated property of a Unity component.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AnimatedComponentProperty {
     /// Enabled/disabled state.
     Enabled,
@@ -166,7 +158,7 @@ impl<Ph: Phase> Target for AnimatedComponentTarget<Ph> {
 }
 
 /// How a generated controller is applied to the playable layer it is bound for.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MergeMode {
     /// The layers are appended to what the playable layer already has.
     #[default]
@@ -177,7 +169,7 @@ pub enum MergeMode {
 }
 
 /// What the object paths written in a controller are relative to.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PathMode {
     /// Paths start at the avatar root.
     #[default]
@@ -211,7 +203,7 @@ impl AnimatorParameterTypeDefault {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AnimatorParameterType {
     Bool,
     Int,
@@ -239,7 +231,7 @@ impl AnimatorParameterType {
 }
 
 /// How a blend tree places its fields.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BlendTreeType {
     Linear,
     Simple2d,
@@ -282,14 +274,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{
-        core::{
-            external::ExternTable,
-            phase::{Compiled, Declared},
-            resolution::{Resolved, Unresolved},
-        },
-        unity::external::ObjectPath,
-    };
+    use crate::core::{phase::Declared, resolution::Unresolved};
 
     crate::test_support::enum_cases! {
         fn typed_parameter_defaults(value: AnimatorParameterTypeDefault) {
@@ -316,16 +301,6 @@ mod tests {
         type ObjectPath = &'static str;
         type ComponentType = &'static str;
         type ObjectRef = ();
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    enum IndexPhase {}
-
-    impl Phase for IndexPhase {
-        type ParameterRef = &'static str;
-        type ObjectPath = u32;
-        type ComponentType = u32;
-        type ObjectRef = u32;
     }
 
     #[rstest]
@@ -541,32 +516,5 @@ mod tests {
             property: AnimatedGameObjectProperty::Active,
         });
         assert_eq!(first, second);
-    }
-
-    #[rstest]
-    fn compiled_targets_serialize_references_as_index_and_name() {
-        let mut paths = ExternTable::<ObjectPath>::new();
-        paths.intern(Unresolved::new("Body".into()));
-        let hips = paths.intern(Unresolved::new("Armature/Hips".into()));
-
-        let game_object = AnimatedTarget::<Compiled>::GameObject(AnimatedGameObjectTarget {
-            path: hips,
-            property: AnimatedGameObjectProperty::Active,
-        });
-        let expected = AnimatedTarget::<IndexPhase>::GameObject(AnimatedGameObjectTarget {
-            path: 1,
-            property: AnimatedGameObjectProperty::Active,
-        });
-        assert_eq!(rmp_serde::to_vec_named(&game_object).unwrap(), rmp_serde::to_vec_named(&expected).unwrap());
-
-        let animator_self = AnimatedTarget::<Compiled>::AnimatorSelf(AnimatedAnimatorTarget {
-            property: AnimatedAnimatorProperty::ParameterFloatValue {
-                name: Resolved::new("GestureLeft".into(), AnimatedValueType::Int),
-            },
-        });
-        let expected = AnimatedTarget::<TestPhase>::AnimatorSelf(AnimatedAnimatorTarget {
-            property: AnimatedAnimatorProperty::ParameterFloatValue { name: "GestureLeft" },
-        });
-        assert_eq!(rmp_serde::to_vec_named(&animator_self).unwrap(), rmp_serde::to_vec_named(&expected).unwrap());
     }
 }

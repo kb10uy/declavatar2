@@ -3,10 +3,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use serde::{Deserialize, Serialize, Serializer};
-
 /// Position in the script where a reference was written.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SourceLocation {
     pub chunk: String,
     pub line: u32,
@@ -14,7 +12,7 @@ pub struct SourceLocation {
 
 /// A reference that is only known by its name; whether it exists is not yet checked.
 /// Equality and ordering consider only the value, so two references to the same name are the same reference.
-/// This type intentionally does not implement `Serialize` so that unresolved references can never leak into output.
+/// This type intentionally has no interop encoding so that unresolved references can never leak into output.
 #[derive(Debug, Clone)]
 pub struct Unresolved<T> {
     pub value: T,
@@ -64,7 +62,7 @@ impl<T: Hash> Hash for Unresolved<T> {
 }
 
 /// A reference whose existence has been confirmed by the transformer.
-/// `context` carries information gathered during resolution and is never serialized; only `value` is.
+/// `context` carries information gathered during resolution and is never encoded; only `value` is.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Resolved<T, C> {
     pub value: T,
@@ -74,12 +72,6 @@ pub struct Resolved<T, C> {
 impl<T, C> Resolved<T, C> {
     pub fn new(value: T, context: C) -> Self {
         Self { value, context }
-    }
-}
-
-impl<T: Serialize, C> Serialize for Resolved<T, C> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.value.serialize(serializer)
     }
 }
 
@@ -107,11 +99,5 @@ mod tests {
         assert_eq!(first, second);
         assert_ne!(first, other);
         assert_eq!(BTreeSet::from([first, second, other]).len(), 2);
-    }
-
-    #[rstest]
-    fn resolved_serializes_value_only() {
-        let resolved = Resolved::new("Emote", 42u8);
-        assert_eq!(rmp_serde::to_vec(&resolved).unwrap(), rmp_serde::to_vec("Emote").unwrap());
     }
 }

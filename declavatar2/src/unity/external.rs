@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 use crate::core::external::{ExternKind, ExternTable};
 
 /// Path to a GameObject, such as `Armature/Hips`.
@@ -31,7 +29,7 @@ impl ExternKind for Asset {
 }
 
 /// How the client should find a Unity asset.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AssetLocator {
     /// By asset GUID.
     Guid(String),
@@ -45,7 +43,7 @@ pub enum AssetLocator {
 
 /// Everything an avatar asks the client for: every external reference table, and whether
 /// a root for relative paths has to be given.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Externals {
     pub object_paths: ExternTable<ObjectPath>,
     pub component_types: ExternTable<ComponentType>,
