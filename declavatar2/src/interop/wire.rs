@@ -231,6 +231,12 @@ impl<'a> Reader<'a> {
         Ok(self.take(1)?[0])
     }
 
+    pub fn peek_u8(&mut self) -> Result<u8, DecodeError> {
+        let value = self.u8()?;
+        self.position -= 1;
+        Ok(value)
+    }
+
     pub fn u16(&mut self) -> Result<u16, DecodeError> {
         self.array().map(u16::from_le_bytes)
     }
@@ -358,6 +364,21 @@ impl<T: Encode> Encode for [T] {
             item.encode(writer)?;
         }
         Ok(())
+    }
+}
+
+impl<T: Encode, const N: usize> Encode for [T; N] {
+    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
+        for item in self {
+            item.encode(writer)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Decode> Decode for [T; 2] {
+    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        Ok([reader.decode()?, reader.decode()?])
     }
 }
 

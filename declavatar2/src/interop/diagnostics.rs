@@ -1,4 +1,4 @@
-use super::wire::{Decode, DecodeError, Encode, EncodeError, Reader, Writer};
+use super::macros::{wire_enum, wire_struct};
 use crate::{CompileError, core::resolution::SourceLocation};
 
 /// Everything a failed compile reports to the client.
@@ -47,57 +47,14 @@ impl From<&CompileError> for Diagnostics {
     }
 }
 
-impl Encode for Diagnostics {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.stage.encode(writer)?;
-        self.items.encode(writer)
-    }
+wire_struct! {
+    Diagnostics { stage, items }
+    Diagnostic { at, message }
 }
 
-impl Decode for Diagnostics {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            stage: reader.decode()?,
-            items: reader.decode()?,
-        })
-    }
-}
-
-impl Encode for DiagnosticStage {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        writer.u8(match self {
-            DiagnosticStage::Script => 0,
-            DiagnosticStage::Transform => 1,
-        });
-        Ok(())
-    }
-}
-
-impl Decode for DiagnosticStage {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(DiagnosticStage::Script),
-            1 => Ok(DiagnosticStage::Transform),
-            value => Err(DecodeError::InvalidDiscriminator {
-                type_name: "DiagnosticStage",
-                value,
-            }),
-        }
-    }
-}
-
-impl Encode for Diagnostic {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.at.encode(writer)?;
-        self.message.encode(writer)
-    }
-}
-
-impl Decode for Diagnostic {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            at: reader.decode()?,
-            message: reader.decode()?,
-        })
+wire_enum! {
+    DiagnosticStage {
+        0 Script,
+        1 Transform,
     }
 }

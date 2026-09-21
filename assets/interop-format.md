@@ -345,7 +345,7 @@ Golden comparisons detect changes exercised by the fixtures, but regenerating go
 
 ## Implementation Notes
 
-- The encoder and decoder live in a `declavatar2::interop` module: a `Writer` over `Vec<u8>` and a `Reader` over `&[u8]` for the primitives and the header, and `Encode` / `Decode` implemented by hand for every type in this document. Discriminators are written as literal constants next to the type they belong to, so the Rust and C# implementations can be read side by side.
+- The encoder and decoder live in a `declavatar2::interop` module: a `Writer` over `Vec<u8>` and a `Reader` over `&[u8]` for the primitives and the header, and `Encode` / `Decode` per type in this document. Types whose wire layout is their field or variant list in order are declared through `wire_struct!` and `wire_enum!`, which take the field order and the literal discriminators; types that need reader context, validation or a layout different from the Rust definition are written by hand. Either way the discriminators sit next to the type they belong to, so the Rust and C# implementations can be read side by side.
 - `AnimatorParameterTypeDefault` retains typed defaults (`bool`, `i32`, `f32`) in the model and transform. Integer defaults outside the `i32` range are transform errors, including for internal parameters.
 - `serde` and `rmp-serde` are not used by this format and are removed together with the partial `Serialize` implementations they supported. The `serialize` method of the `StateBehavior` trait is subsumed by the `Behavior` encoding.
 - The FFI returns one blob as a pointer and a length, owned by the native side and released through a matching free function. The magic makes the blob self-identifying, so one compile entry point returns either kind.

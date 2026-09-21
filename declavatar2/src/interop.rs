@@ -1,6 +1,7 @@
 mod avatar;
 mod diagnostics;
 mod header;
+mod macros;
 mod wire;
 
 #[cfg(test)]

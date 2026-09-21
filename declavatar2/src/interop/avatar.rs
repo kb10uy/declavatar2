@@ -5,7 +5,10 @@ use std::{
 
 use nalgebra::{Quaternion, UnitQuaternion, Vector2, Vector3, Vector4};
 
-use super::wire::{Decode, DecodeError, Encode, EncodeError, Reader, Writer};
+use super::{
+    macros::{wire_enum, wire_struct},
+    wire::{Decode, DecodeError, Encode, EncodeError, Reader, Writer},
+};
 use crate::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
@@ -121,53 +124,15 @@ where
     }
 }
 
-impl Encode for SourceLocation {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.chunk.encode(writer)?;
-        self.line.encode(writer)
-    }
+wire_struct! {
+    SourceLocation { chunk, line }
 }
 
-impl Decode for SourceLocation {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            chunk: reader.decode()?,
-            line: reader.decode()?,
-        })
-    }
-}
-
-impl Encode for AssetLocator {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            AssetLocator::Guid(guid) => {
-                writer.u8(0);
-                guid.encode(writer)
-            }
-            AssetLocator::Path(path) => {
-                writer.u8(1);
-                path.encode(writer)
-            }
-            AssetLocator::Named { asset_type, name } => {
-                writer.u8(2);
-                asset_type.encode(writer)?;
-                name.encode(writer)
-            }
-        }
-    }
-}
-
-impl Decode for AssetLocator {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(AssetLocator::Guid(reader.decode()?)),
-            1 => Ok(AssetLocator::Path(reader.decode()?)),
-            2 => Ok(AssetLocator::Named {
-                asset_type: reader.decode()?,
-                name: reader.decode()?,
-            }),
-            value => Err(unknown("AssetLocator", value)),
-        }
+wire_enum! {
+    AssetLocator {
+        0 Guid(guid),
+        1 Path(path),
+        2 Named { asset_type, name },
     }
 }
 
@@ -302,61 +267,15 @@ impl Decode for Avatar {
     }
 }
 
-impl Encode for ExpressionParameter {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.name.encode(writer)?;
-        self.type_default.encode(writer)?;
-        self.saved.encode(writer)?;
-        self.synced.encode(writer)
-    }
+wire_struct! {
+    ExpressionParameter { name, type_default, saved, synced }
 }
 
-impl Decode for ExpressionParameter {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            name: reader.decode()?,
-            type_default: reader.decode()?,
-            saved: reader.decode()?,
-            synced: reader.decode()?,
-        })
-    }
-}
-
-impl Encode for ExpressionParameterTypeDefault {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            ExpressionParameterTypeDefault::Bool(default) => {
-                writer.u8(0);
-                default.encode(writer)
-            }
-            ExpressionParameterTypeDefault::Int { width, default } => {
-                writer.u8(1);
-                width.encode(writer)?;
-                default.encode(writer)
-            }
-            ExpressionParameterTypeDefault::Float { width, default } => {
-                writer.u8(2);
-                width.encode(writer)?;
-                default.encode(writer)
-            }
-        }
-    }
-}
-
-impl Decode for ExpressionParameterTypeDefault {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(ExpressionParameterTypeDefault::Bool(reader.decode()?)),
-            1 => Ok(ExpressionParameterTypeDefault::Int {
-                width: reader.decode()?,
-                default: reader.decode()?,
-            }),
-            2 => Ok(ExpressionParameterTypeDefault::Float {
-                width: reader.decode()?,
-                default: reader.decode()?,
-            }),
-            value => Err(unknown("ExpressionParameterTypeDefault", value)),
-        }
+wire_enum! {
+    ExpressionParameterTypeDefault {
+        0 Bool(default),
+        1 Int { width, default },
+        2 Float { width, default },
     }
 }
 
@@ -380,75 +299,26 @@ impl Decode for ExpressionParameterWidth {
     }
 }
 
-impl Encode for PlayableLayer {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        writer.u8(match self {
-            PlayableLayer::Base => 0,
-            PlayableLayer::Additive => 1,
-            PlayableLayer::Gesture => 2,
-            PlayableLayer::Action => 3,
-            PlayableLayer::Fx => 4,
-            PlayableLayer::Sitting => 5,
-            PlayableLayer::TPose => 6,
-            PlayableLayer::IkPose => 7,
-        });
-        Ok(())
+wire_enum! {
+    PlayableLayer {
+        0 Base,
+        1 Additive,
+        2 Gesture,
+        3 Action,
+        4 Fx,
+        5 Sitting,
+        6 TPose,
+        7 IkPose,
     }
-}
 
-impl Decode for PlayableLayer {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(match reader.u8()? {
-            0 => PlayableLayer::Base,
-            1 => PlayableLayer::Additive,
-            2 => PlayableLayer::Gesture,
-            3 => PlayableLayer::Action,
-            4 => PlayableLayer::Fx,
-            5 => PlayableLayer::Sitting,
-            6 => PlayableLayer::TPose,
-            7 => PlayableLayer::IkPose,
-            value => return Err(unknown("PlayableLayer", value)),
-        })
+    MergeMode {
+        0 Append,
+        1 Replace,
     }
-}
 
-impl Encode for MergeMode {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        writer.u8(match self {
-            MergeMode::Append => 0,
-            MergeMode::Replace => 1,
-        });
-        Ok(())
-    }
-}
-
-impl Decode for MergeMode {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(match reader.u8()? {
-            0 => MergeMode::Append,
-            1 => MergeMode::Replace,
-            value => return Err(unknown("MergeMode", value)),
-        })
-    }
-}
-
-impl Encode for PathMode {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        writer.u8(match self {
-            PathMode::Absolute => 0,
-            PathMode::Relative => 1,
-        });
-        Ok(())
-    }
-}
-
-impl Decode for PathMode {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(match reader.u8()? {
-            0 => PathMode::Absolute,
-            1 => PathMode::Relative,
-            value => return Err(unknown("PathMode", value)),
-        })
+    PathMode {
+        0 Absolute,
+        1 Relative,
     }
 }
 
@@ -485,49 +355,15 @@ impl Decode for PlayableController {
     }
 }
 
-impl Encode for AnimatorParameter {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.name.encode(writer)?;
-        self.type_default.encode(writer)
-    }
+wire_struct! {
+    AnimatorParameter { name, type_default }
 }
 
-impl Decode for AnimatorParameter {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            name: reader.decode()?,
-            type_default: reader.decode()?,
-        })
-    }
-}
-
-impl Encode for AnimatorParameterTypeDefault {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            AnimatorParameterTypeDefault::Bool(default) => {
-                writer.u8(0);
-                default.encode(writer)
-            }
-            AnimatorParameterTypeDefault::Int(default) => {
-                writer.u8(1);
-                default.encode(writer)
-            }
-            AnimatorParameterTypeDefault::Float(default) => {
-                writer.u8(2);
-                default.encode(writer)
-            }
-        }
-    }
-}
-
-impl Decode for AnimatorParameterTypeDefault {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(AnimatorParameterTypeDefault::Bool(reader.decode()?)),
-            1 => Ok(AnimatorParameterTypeDefault::Int(reader.decode()?)),
-            2 => Ok(AnimatorParameterTypeDefault::Float(reader.decode()?)),
-            value => Err(unknown("AnimatorParameterTypeDefault", value)),
-        }
+wire_enum! {
+    AnimatorParameterTypeDefault {
+        0 Bool(default),
+        1 Int(default),
+        2 Float(default),
     }
 }
 
@@ -586,24 +422,8 @@ impl Decode for AnimatorState {
     }
 }
 
-impl Encode for AnimatorTransition {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.from.encode(writer)?;
-        self.to.encode(writer)?;
-        self.duration.encode(writer)?;
-        self.conditions.encode(writer)
-    }
-}
-
-impl Decode for AnimatorTransition {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            from: reader.decode()?,
-            to: reader.decode()?,
-            duration: reader.decode()?,
-            conditions: reader.decode()?,
-        })
-    }
+wire_struct! {
+    AnimatorTransition { from, to, duration, conditions }
 }
 
 impl Encode for TransitionSource {
@@ -652,52 +472,14 @@ impl Decode for TransitionTarget {
     }
 }
 
-impl Encode for AnimatorCondition {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            AnimatorCondition::If(parameter) => {
-                writer.u8(0);
-                parameter.encode(writer)
-            }
-            AnimatorCondition::IfNot(parameter) => {
-                writer.u8(1);
-                parameter.encode(writer)
-            }
-            AnimatorCondition::Equals(parameter, value) => {
-                writer.u8(2);
-                parameter.encode(writer)?;
-                value.encode(writer)
-            }
-            AnimatorCondition::NotEqual(parameter, value) => {
-                writer.u8(3);
-                parameter.encode(writer)?;
-                value.encode(writer)
-            }
-            AnimatorCondition::Greater(parameter, value) => {
-                writer.u8(4);
-                parameter.encode(writer)?;
-                value.encode(writer)
-            }
-            AnimatorCondition::Less(parameter, value) => {
-                writer.u8(5);
-                parameter.encode(writer)?;
-                value.encode(writer)
-            }
-        }
-    }
-}
-
-impl Decode for AnimatorCondition {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(AnimatorCondition::If(reader.decode()?)),
-            1 => Ok(AnimatorCondition::IfNot(reader.decode()?)),
-            2 => Ok(AnimatorCondition::Equals(reader.decode()?, reader.decode()?)),
-            3 => Ok(AnimatorCondition::NotEqual(reader.decode()?, reader.decode()?)),
-            4 => Ok(AnimatorCondition::Greater(reader.decode()?, reader.decode()?)),
-            5 => Ok(AnimatorCondition::Less(reader.decode()?, reader.decode()?)),
-            value => Err(unknown("AnimatorCondition", value)),
-        }
+wire_enum! {
+    AnimatorCondition {
+        0 If(parameter),
+        1 IfNot(parameter),
+        2 Equals(parameter, value),
+        3 NotEqual(parameter, value),
+        4 Greater(parameter, value),
+        5 Less(parameter, value),
     }
 }
 
@@ -712,521 +494,157 @@ impl Encode for Motion {
 
 impl Decode for Motion {
     fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(Motion::Clip(Clip::Inline(reader.decode()?))),
-            1 => Ok(Motion::Clip(Clip::External(reader.decode()?))),
-            2 => Ok(Motion::BlendTree(BlendTree::Parametric(decode_parametric_tree(reader)?))),
-            3 => Ok(Motion::BlendTree(BlendTree::Direct(decode_direct_tree(reader)?))),
+        match reader.peek_u8()? {
+            0 | 1 => Ok(Motion::Clip(reader.decode()?)),
+            2 | 3 => Ok(Motion::BlendTree(reader.decode()?)),
             value => Err(unknown("Motion", value)),
         }
     }
 }
 
-impl Encode for Clip {
+wire_enum! {
+    Clip {
+        0 Inline(animation),
+        1 External(asset),
+    }
+
+    BlendTree {
+        2 Parametric(tree),
+        3 Direct(tree),
+    }
+
+    BlendTreeType {
+        0 Linear,
+        1 Simple2d,
+        2 Freeform2d,
+        3 Cartesian2d,
+    }
+}
+
+wire_struct! {
+    ParametricBlendTree { tree_type, x, y, fields }
+    ParametricField { position, speed, motion }
+    DirectBlendTree { fields }
+    DirectField { weight_by, speed, motion }
+}
+
+impl<E: MaybeZeroableEntry + Encode> Encode for ValueSet<E> {
     fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            Clip::Inline(animation) => {
-                writer.u8(0);
-                animation.encode(writer)
-            }
-            Clip::External(asset) => {
-                writer.u8(1);
-                asset.encode(writer)
-            }
+        writer.length("list length", self.len())?;
+        for (_, entry) in self.entries() {
+            entry.encode(writer)?;
         }
-    }
-}
-
-impl Decode for Clip {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(Clip::Inline(reader.decode()?)),
-            1 => Ok(Clip::External(reader.decode()?)),
-            value => Err(unknown("Clip", value)),
-        }
-    }
-}
-
-impl Encode for BlendTree {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            BlendTree::Parametric(tree) => {
-                writer.u8(2);
-                tree.tree_type.encode(writer)?;
-                tree.x.encode(writer)?;
-                tree.y.encode(writer)?;
-                tree.fields.encode(writer)
-            }
-            BlendTree::Direct(tree) => {
-                writer.u8(3);
-                tree.fields.encode(writer)
-            }
-        }
-    }
-}
-
-impl Decode for BlendTree {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            2 => Ok(BlendTree::Parametric(decode_parametric_tree(reader)?)),
-            3 => Ok(BlendTree::Direct(decode_direct_tree(reader)?)),
-            value => Err(unknown("BlendTree", value)),
-        }
-    }
-}
-
-fn decode_parametric_tree(reader: &mut Reader<'_>) -> Result<ParametricBlendTree, DecodeError> {
-    Ok(ParametricBlendTree {
-        tree_type: reader.decode()?,
-        x: reader.decode()?,
-        y: reader.decode()?,
-        fields: reader.decode()?,
-    })
-}
-
-fn decode_direct_tree(reader: &mut Reader<'_>) -> Result<DirectBlendTree, DecodeError> {
-    Ok(DirectBlendTree { fields: reader.decode()? })
-}
-
-impl Encode for BlendTreeType {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        writer.u8(match self {
-            BlendTreeType::Linear => 0,
-            BlendTreeType::Simple2d => 1,
-            BlendTreeType::Freeform2d => 2,
-            BlendTreeType::Cartesian2d => 3,
-        });
         Ok(())
     }
 }
 
-impl Decode for BlendTreeType {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(match reader.u8()? {
-            0 => BlendTreeType::Linear,
-            1 => BlendTreeType::Simple2d,
-            2 => BlendTreeType::Freeform2d,
-            3 => BlendTreeType::Cartesian2d,
-            value => return Err(unknown("BlendTreeType", value)),
-        })
-    }
-}
-
-impl Encode for ParametricField {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        writer.f64(self.position[0]);
-        writer.f64(self.position[1]);
-        self.speed.encode(writer)?;
-        self.motion.encode(writer)
-    }
-}
-
-impl Decode for ParametricField {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            position: [reader.f64()?, reader.f64()?],
-            speed: reader.decode()?,
-            motion: reader.decode()?,
-        })
-    }
-}
-
-impl Encode for DirectField {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.weight_by.encode(writer)?;
-        self.speed.encode(writer)?;
-        self.motion.encode(writer)
-    }
-}
-
-impl Decode for DirectField {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            weight_by: reader.decode()?,
-            speed: reader.decode()?,
-            motion: reader.decode()?,
-        })
-    }
-}
-
-fn encode_value_set<E: MaybeZeroableEntry + Encode>(set: &ValueSet<E>, writer: &mut Writer) -> Result<(), EncodeError> {
-    writer.length("list length", set.len())?;
-    for (_, entry) in set.entries() {
-        entry.encode(writer)?;
-    }
-    Ok(())
-}
-
-fn decode_value_set<E: MaybeZeroableEntry + Decode>(reader: &mut Reader<'_>) -> Result<ValueSet<E>, DecodeError>
+impl<E: MaybeZeroableEntry + Decode> Decode for ValueSet<E>
 where
     E::Key: Debug,
 {
-    let count = reader.length("list length")?;
-    let mut set = ValueSet::new();
-    for _ in 0..count {
-        let entry = E::decode(reader)?;
-        let key = entry.key();
-        if set.insert(entry).is_some() {
-            return Err(DecodeError::Duplicate {
-                what: "animation target",
-                key: format!("{key:?}"),
-            });
-        }
-    }
-    Ok(set)
-}
-
-impl Encode for InlineAnimation<Compiled> {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            InlineAnimation::Fixed(entries) => {
-                writer.u8(0);
-                encode_value_set(entries, writer)
-            }
-            InlineAnimation::Keyed(animation) => {
-                writer.u8(1);
-                animation.attributes.encode(writer)?;
-                encode_value_set(&animation.curves, writer)
+    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        let count = reader.length("list length")?;
+        let mut set = ValueSet::new();
+        for _ in 0..count {
+            let entry = E::decode(reader)?;
+            let key = entry.key();
+            if set.insert(entry).is_some() {
+                return Err(DecodeError::Duplicate {
+                    what: "animation target",
+                    key: format!("{key:?}"),
+                });
             }
         }
+        Ok(set)
     }
 }
 
-impl Decode for InlineAnimation<Compiled> {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(InlineAnimation::Fixed(decode_value_set(reader)?)),
-            1 => Ok(InlineAnimation::Keyed(KeyedAnimation {
-                attributes: reader.decode()?,
-                curves: decode_value_set(reader)?,
-            })),
-            value => Err(unknown("InlineAnimation", value)),
-        }
+wire_enum! {
+    InlineAnimation<Compiled> {
+        0 Fixed(entries),
+        1 Keyed(animation),
+    }
+
+    Interpolation {
+        0 Constant,
+        1 Linear,
+        2 Bezier { x1, y1, x2, y2 },
     }
 }
 
-impl Encode for FixedAnimationEntry<Compiled> {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.key.encode(writer)?;
-        self.value.encode(writer)
-    }
+wire_struct! {
+    KeyedAnimation<Compiled> { attributes, curves }
+    FixedAnimationEntry<Compiled> { key, value }
+    KeyedAnimationEntry<Compiled> { key, curve }
+    ClipAttributes { length, loop_time, loop_blend, cycle_offset }
+    Curve<Extern<Asset>> { first, rest }
+    Keyframe<Extern<Asset>> { time, value }
 }
 
-impl Decode for FixedAnimationEntry<Compiled> {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            key: reader.decode()?,
-            value: reader.decode()?,
-        })
-    }
-}
-
-impl Encode for KeyedAnimationEntry<Compiled> {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.key.encode(writer)?;
-        self.curve.encode(writer)
-    }
-}
-
-impl Decode for KeyedAnimationEntry<Compiled> {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            key: reader.decode()?,
-            curve: reader.decode()?,
-        })
-    }
-}
-
-impl Encode for ClipAttributes {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.length.encode(writer)?;
-        self.loop_time.encode(writer)?;
-        self.loop_blend.encode(writer)?;
-        self.cycle_offset.encode(writer)
-    }
-}
-
-impl Decode for ClipAttributes {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            length: reader.decode()?,
-            loop_time: reader.decode()?,
-            loop_blend: reader.decode()?,
-            cycle_offset: reader.decode()?,
-        })
-    }
-}
-
-impl<R: WireObjectRef> Encode for Curve<R> {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.first.encode(writer)?;
-        self.rest.encode(writer)
-    }
-}
-
-impl<R: WireObjectRef> Decode for Curve<R> {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            first: reader.decode()?,
-            rest: reader.decode()?,
-        })
-    }
-}
-
-impl<R: WireObjectRef> Encode for (Interpolation, Keyframe<R>) {
+impl Encode for (Interpolation, Keyframe<Extern<Asset>>) {
     fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
         self.0.encode(writer)?;
         self.1.encode(writer)
     }
 }
 
-impl<R: WireObjectRef> Decode for (Interpolation, Keyframe<R>) {
+impl Decode for (Interpolation, Keyframe<Extern<Asset>>) {
     fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
         Ok((reader.decode()?, reader.decode()?))
     }
 }
 
-impl Encode for Interpolation {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            Interpolation::Constant => writer.u8(0),
-            Interpolation::Linear => writer.u8(1),
-            Interpolation::Bezier { x1, y1, x2, y2 } => {
-                writer.u8(2);
-                writer.f64(*x1);
-                writer.f64(*y1);
-                writer.f64(*x2);
-                writer.f64(*y2);
-            }
-        }
-        Ok(())
+wire_enum! {
+    AnimatedTarget<Compiled> {
+        0 AnimatorSelf(target),
+        1 GameObject(target),
+        2 Renderer(target),
+        3 Component(target),
+    }
+
+    AnimatedAnimatorProperty<Compiled> {
+        0 ParameterFloatValue { name },
+    }
+
+    AnimatedGameObjectProperty {
+        0 Active,
+        1 TransformPosition,
+        2 TransformRotationQuaternion,
+        3 TransformRotationEuler,
+        4 TransformScale,
+    }
+
+    AnimatedRendererProperty {
+        0 Enabled,
+        1 BlendShape { name },
+        2 Material { slot },
+        3 MaterialProperty { name },
+        4 Serialized { name },
+    }
+
+    AnimatedComponentProperty {
+        0 Enabled,
+        1 Serialized { name },
+    }
+
+    AnimatedValueType {
+        0 Float,
+        1 Int,
+        2 Bool,
+        3 Vector2,
+        4 Vector3,
+        5 Vector4,
+        6 Quaternion,
+        7 Color,
+        8 ObjectReference,
     }
 }
 
-impl Decode for Interpolation {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(Interpolation::Constant),
-            1 => Ok(Interpolation::Linear),
-            2 => Ok(Interpolation::Bezier {
-                x1: reader.f64()?,
-                y1: reader.f64()?,
-                x2: reader.f64()?,
-                y2: reader.f64()?,
-            }),
-            value => Err(unknown("Interpolation", value)),
-        }
-    }
-}
-
-impl<R: WireObjectRef> Encode for Keyframe<R> {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.time.encode(writer)?;
-        self.value.encode(writer)
-    }
-}
-
-impl<R: WireObjectRef> Decode for Keyframe<R> {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            time: reader.decode()?,
-            value: reader.decode()?,
-        })
-    }
-}
-
-impl Encode for AnimatedTarget<Compiled> {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            AnimatedTarget::AnimatorSelf(target) => {
-                writer.u8(0);
-                target.property.encode(writer)
-            }
-            AnimatedTarget::GameObject(target) => {
-                writer.u8(1);
-                target.path.encode(writer)?;
-                target.property.encode(writer)
-            }
-            AnimatedTarget::Renderer(target) => {
-                writer.u8(2);
-                target.path.encode(writer)?;
-                target.renderer_type.encode(writer)?;
-                target.property.encode(writer)
-            }
-            AnimatedTarget::Component(target) => {
-                writer.u8(3);
-                target.path.encode(writer)?;
-                target.component_type.encode(writer)?;
-                target.property.encode(writer)?;
-                target.value_type.encode(writer)
-            }
-        }
-    }
-}
-
-impl Decode for AnimatedTarget<Compiled> {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(AnimatedTarget::AnimatorSelf(AnimatedAnimatorTarget { property: reader.decode()? })),
-            1 => Ok(AnimatedTarget::GameObject(AnimatedGameObjectTarget {
-                path: reader.decode()?,
-                property: reader.decode()?,
-            })),
-            2 => Ok(AnimatedTarget::Renderer(AnimatedRendererTarget {
-                path: reader.decode()?,
-                renderer_type: reader.decode()?,
-                property: reader.decode()?,
-            })),
-            3 => Ok(AnimatedTarget::Component(AnimatedComponentTarget {
-                path: reader.decode()?,
-                component_type: reader.decode()?,
-                property: reader.decode()?,
-                value_type: reader.decode()?,
-            })),
-            value => Err(unknown("AnimatedTarget", value)),
-        }
-    }
-}
-
-impl Encode for AnimatedAnimatorProperty<Compiled> {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            AnimatedAnimatorProperty::ParameterFloatValue { name } => {
-                writer.u8(0);
-                name.encode(writer)
-            }
-        }
-    }
-}
-
-impl Decode for AnimatedAnimatorProperty<Compiled> {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(AnimatedAnimatorProperty::ParameterFloatValue { name: reader.decode()? }),
-            value => Err(unknown("AnimatedAnimatorProperty", value)),
-        }
-    }
-}
-
-impl Encode for AnimatedGameObjectProperty {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        writer.u8(match self {
-            AnimatedGameObjectProperty::Active => 0,
-            AnimatedGameObjectProperty::TransformPosition => 1,
-            AnimatedGameObjectProperty::TransformRotationQuaternion => 2,
-            AnimatedGameObjectProperty::TransformRotationEuler => 3,
-            AnimatedGameObjectProperty::TransformScale => 4,
-        });
-        Ok(())
-    }
-}
-
-impl Decode for AnimatedGameObjectProperty {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(match reader.u8()? {
-            0 => AnimatedGameObjectProperty::Active,
-            1 => AnimatedGameObjectProperty::TransformPosition,
-            2 => AnimatedGameObjectProperty::TransformRotationQuaternion,
-            3 => AnimatedGameObjectProperty::TransformRotationEuler,
-            4 => AnimatedGameObjectProperty::TransformScale,
-            value => return Err(unknown("AnimatedGameObjectProperty", value)),
-        })
-    }
-}
-
-impl Encode for AnimatedRendererProperty {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            AnimatedRendererProperty::Enabled => writer.u8(0),
-            AnimatedRendererProperty::BlendShape { name } => {
-                writer.u8(1);
-                name.encode(writer)?;
-            }
-            AnimatedRendererProperty::Material { slot } => {
-                writer.u8(2);
-                writer.u32(*slot);
-            }
-            AnimatedRendererProperty::MaterialProperty { name } => {
-                writer.u8(3);
-                name.encode(writer)?;
-            }
-            AnimatedRendererProperty::Serialized { name } => {
-                writer.u8(4);
-                name.encode(writer)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-impl Decode for AnimatedRendererProperty {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(AnimatedRendererProperty::Enabled),
-            1 => Ok(AnimatedRendererProperty::BlendShape { name: reader.decode()? }),
-            2 => Ok(AnimatedRendererProperty::Material { slot: reader.u32()? }),
-            3 => Ok(AnimatedRendererProperty::MaterialProperty { name: reader.decode()? }),
-            4 => Ok(AnimatedRendererProperty::Serialized { name: reader.decode()? }),
-            value => Err(unknown("AnimatedRendererProperty", value)),
-        }
-    }
-}
-
-impl Encode for AnimatedComponentProperty {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            AnimatedComponentProperty::Enabled => writer.u8(0),
-            AnimatedComponentProperty::Serialized { name } => {
-                writer.u8(1);
-                name.encode(writer)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-impl Decode for AnimatedComponentProperty {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(AnimatedComponentProperty::Enabled),
-            1 => Ok(AnimatedComponentProperty::Serialized { name: reader.decode()? }),
-            value => Err(unknown("AnimatedComponentProperty", value)),
-        }
-    }
-}
-
-impl Encode for AnimatedValueType {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        writer.u8(match self {
-            AnimatedValueType::Float => 0,
-            AnimatedValueType::Int => 1,
-            AnimatedValueType::Bool => 2,
-            AnimatedValueType::Vector2 => 3,
-            AnimatedValueType::Vector3 => 4,
-            AnimatedValueType::Vector4 => 5,
-            AnimatedValueType::Quaternion => 6,
-            AnimatedValueType::Color => 7,
-            AnimatedValueType::ObjectReference => 8,
-        });
-        Ok(())
-    }
-}
-
-impl Decode for AnimatedValueType {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(match reader.u8()? {
-            0 => AnimatedValueType::Float,
-            1 => AnimatedValueType::Int,
-            2 => AnimatedValueType::Bool,
-            3 => AnimatedValueType::Vector2,
-            4 => AnimatedValueType::Vector3,
-            5 => AnimatedValueType::Vector4,
-            6 => AnimatedValueType::Quaternion,
-            7 => AnimatedValueType::Color,
-            8 => AnimatedValueType::ObjectReference,
-            value => return Err(unknown("AnimatedValueType", value)),
-        })
-    }
+wire_struct! {
+    AnimatedAnimatorTarget<Compiled> { property }
+    AnimatedGameObjectTarget<Compiled> { path, property }
+    AnimatedRendererTarget<Compiled> { path, renderer_type, property }
+    AnimatedComponentTarget<Compiled> { path, component_type, property, value_type }
 }
 
 /// How the object reference of an `AnimatedValue<R>` is carried. `()` has no representation, so it never appears.
@@ -1331,133 +749,42 @@ impl<R: WireObjectRef> Decode for AnimatedValue<R> {
     }
 }
 
-impl Encode for Behavior {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            Behavior::ParameterDrive(drive) => {
-                writer.u8(0);
-                drive.target.encode(writer)
-            }
-            Behavior::TrackingControl(control) => {
-                writer.u8(1);
-                control.encode(writer)
-            }
-            Behavior::Generic(behavior) => {
-                writer.u8(2);
-                behavior.type_name.encode(writer)?;
-                behavior.fields.encode(writer)
-            }
-        }
+wire_enum! {
+    Behavior {
+        0 ParameterDrive(drive),
+        1 TrackingControl(control),
+        2 Generic(behavior),
+    }
+
+    ParameterDriveTarget<Compiled> {
+        0 Set { parameter, value },
+        1 Add { parameter, value },
+        2 RandomInt { parameter, range },
+        3 RandomBool { parameter, chance },
+        4 RandomFloat { parameter, range },
+        5 Copy { from, to },
+        6 RangedCopy { from, from_range, to, to_range },
+    }
+
+    TrackingControlMode {
+        0 NoChange,
+        1 Tracking,
+        2 Animation,
+    }
+
+    GenericValue {
+        0 Bool(value),
+        1 Int(value),
+        2 Float(value),
+        3 String(value),
+        4 List(values),
+        5 Map(values),
     }
 }
 
-impl Decode for Behavior {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(Behavior::ParameterDrive(ParameterDrive { target: reader.decode()? })),
-            1 => Ok(Behavior::TrackingControl(reader.decode()?)),
-            2 => Ok(Behavior::Generic(GenericStateBehavior {
-                type_name: reader.decode()?,
-                fields: reader.decode()?,
-            })),
-            value => Err(unknown("Behavior", value)),
-        }
-    }
-}
-
-impl Encode for ParameterDriveTarget<Compiled> {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            ParameterDriveTarget::Set { parameter, value } => {
-                writer.u8(0);
-                parameter.encode(writer)?;
-                value.encode(writer)
-            }
-            ParameterDriveTarget::Add { parameter, value } => {
-                writer.u8(1);
-                parameter.encode(writer)?;
-                value.encode(writer)
-            }
-            ParameterDriveTarget::RandomInt { parameter, range } => {
-                writer.u8(2);
-                parameter.encode(writer)?;
-                writer.i64(range[0]);
-                writer.i64(range[1]);
-                Ok(())
-            }
-            ParameterDriveTarget::RandomBool { parameter, chance } => {
-                writer.u8(3);
-                parameter.encode(writer)?;
-                writer.f64(*chance);
-                Ok(())
-            }
-            ParameterDriveTarget::RandomFloat { parameter, range } => {
-                writer.u8(4);
-                parameter.encode(writer)?;
-                writer.f64(range[0]);
-                writer.f64(range[1]);
-                Ok(())
-            }
-            ParameterDriveTarget::Copy { from, to } => {
-                writer.u8(5);
-                from.encode(writer)?;
-                to.encode(writer)
-            }
-            ParameterDriveTarget::RangedCopy {
-                from,
-                from_range,
-                to,
-                to_range,
-            } => {
-                writer.u8(6);
-                from.encode(writer)?;
-                writer.f64(from_range[0]);
-                writer.f64(from_range[1]);
-                to.encode(writer)?;
-                writer.f64(to_range[0]);
-                writer.f64(to_range[1]);
-                Ok(())
-            }
-        }
-    }
-}
-
-impl Decode for ParameterDriveTarget<Compiled> {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(ParameterDriveTarget::Set {
-                parameter: reader.decode()?,
-                value: reader.decode()?,
-            }),
-            1 => Ok(ParameterDriveTarget::Add {
-                parameter: reader.decode()?,
-                value: reader.decode()?,
-            }),
-            2 => Ok(ParameterDriveTarget::RandomInt {
-                parameter: reader.decode()?,
-                range: [reader.i64()?, reader.i64()?],
-            }),
-            3 => Ok(ParameterDriveTarget::RandomBool {
-                parameter: reader.decode()?,
-                chance: reader.f64()?,
-            }),
-            4 => Ok(ParameterDriveTarget::RandomFloat {
-                parameter: reader.decode()?,
-                range: [reader.f64()?, reader.f64()?],
-            }),
-            5 => Ok(ParameterDriveTarget::Copy {
-                from: reader.decode()?,
-                to: reader.decode()?,
-            }),
-            6 => Ok(ParameterDriveTarget::RangedCopy {
-                from: reader.decode()?,
-                from_range: [reader.f64()?, reader.f64()?],
-                to: reader.decode()?,
-                to_range: [reader.f64()?, reader.f64()?],
-            }),
-            value => Err(unknown("ParameterDriveTarget", value)),
-        }
-    }
+wire_struct! {
+    ParameterDrive<Compiled> { target }
+    GenericStateBehavior { type_name, fields }
 }
 
 /// The wire order of tracking control targets, one byte each.
@@ -1496,171 +823,17 @@ impl Decode for TrackingControl {
     }
 }
 
-impl Encode for TrackingControlMode {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        writer.u8(match self {
-            TrackingControlMode::NoChange => 0,
-            TrackingControlMode::Tracking => 1,
-            TrackingControlMode::Animation => 2,
-        });
-        Ok(())
+wire_enum! {
+    MenuItem {
+        0 SubMenu { name, items },
+        1 Toggle { name, parameter, value },
+        2 Button { name, parameter, value },
+        3 Radial { name, axis },
+        4 TwoAxis { name, horizontal, vertical },
+        5 FourAxis { name, up, down, left, right },
     }
 }
 
-impl Decode for TrackingControlMode {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(match reader.u8()? {
-            0 => TrackingControlMode::NoChange,
-            1 => TrackingControlMode::Tracking,
-            2 => TrackingControlMode::Animation,
-            value => return Err(unknown("TrackingControlMode", value)),
-        })
-    }
-}
-
-impl Encode for GenericValue {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            GenericValue::Bool(value) => {
-                writer.u8(0);
-                writer.bool(*value);
-                Ok(())
-            }
-            GenericValue::Int(value) => {
-                writer.u8(1);
-                writer.i64(*value);
-                Ok(())
-            }
-            GenericValue::Float(value) => {
-                writer.u8(2);
-                writer.f64(*value);
-                Ok(())
-            }
-            GenericValue::String(value) => {
-                writer.u8(3);
-                value.encode(writer)
-            }
-            GenericValue::List(values) => {
-                writer.u8(4);
-                values.encode(writer)
-            }
-            GenericValue::Map(values) => {
-                writer.u8(5);
-                values.encode(writer)
-            }
-        }
-    }
-}
-
-impl Decode for GenericValue {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(GenericValue::Bool(reader.bool()?)),
-            1 => Ok(GenericValue::Int(reader.i64()?)),
-            2 => Ok(GenericValue::Float(reader.f64()?)),
-            3 => Ok(GenericValue::String(reader.decode()?)),
-            4 => Ok(GenericValue::List(reader.decode()?)),
-            5 => Ok(GenericValue::Map(reader.decode()?)),
-            value => Err(unknown("GenericValue", value)),
-        }
-    }
-}
-
-impl Encode for MenuItem {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        match self {
-            MenuItem::SubMenu { name, items } => {
-                writer.u8(0);
-                name.encode(writer)?;
-                items.encode(writer)
-            }
-            MenuItem::Toggle { name, parameter, value } => {
-                writer.u8(1);
-                name.encode(writer)?;
-                parameter.encode(writer)?;
-                value.encode(writer)
-            }
-            MenuItem::Button { name, parameter, value } => {
-                writer.u8(2);
-                name.encode(writer)?;
-                parameter.encode(writer)?;
-                value.encode(writer)
-            }
-            MenuItem::Radial { name, axis } => {
-                writer.u8(3);
-                name.encode(writer)?;
-                axis.encode(writer)
-            }
-            MenuItem::TwoAxis { name, horizontal, vertical } => {
-                writer.u8(4);
-                name.encode(writer)?;
-                horizontal.encode(writer)?;
-                vertical.encode(writer)
-            }
-            MenuItem::FourAxis { name, up, down, left, right } => {
-                writer.u8(5);
-                name.encode(writer)?;
-                up.encode(writer)?;
-                down.encode(writer)?;
-                left.encode(writer)?;
-                right.encode(writer)
-            }
-        }
-    }
-}
-
-impl Decode for MenuItem {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        match reader.u8()? {
-            0 => Ok(MenuItem::SubMenu {
-                name: reader.decode()?,
-                items: reader.decode()?,
-            }),
-            1 => Ok(MenuItem::Toggle {
-                name: reader.decode()?,
-                parameter: reader.decode()?,
-                value: reader.decode()?,
-            }),
-            2 => Ok(MenuItem::Button {
-                name: reader.decode()?,
-                parameter: reader.decode()?,
-                value: reader.decode()?,
-            }),
-            3 => Ok(MenuItem::Radial {
-                name: reader.decode()?,
-                axis: reader.decode()?,
-            }),
-            4 => Ok(MenuItem::TwoAxis {
-                name: reader.decode()?,
-                horizontal: reader.decode()?,
-                vertical: reader.decode()?,
-            }),
-            5 => Ok(MenuItem::FourAxis {
-                name: reader.decode()?,
-                up: reader.decode()?,
-                down: reader.decode()?,
-                left: reader.decode()?,
-                right: reader.decode()?,
-            }),
-            value => Err(unknown("MenuItem", value)),
-        }
-    }
-}
-
-impl Encode for MenuAxis {
-    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
-        self.parameter.encode(writer)?;
-        self.positive.encode(writer)?;
-        self.negative.encode(writer)
-    }
-}
-
-impl Decode for MenuAxis {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            parameter: reader.decode()?,
-            positive: reader.decode()?,
-            negative: reader.decode()?,
-        })
-    }
+wire_struct! {
+    MenuAxis { parameter, positive, negative }
 }
