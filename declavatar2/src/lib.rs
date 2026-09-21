@@ -1,6 +1,7 @@
 pub mod avatar;
 pub mod core;
 pub mod decl;
+pub mod interop;
 pub mod lua;
 pub mod transform;
 pub mod unity;

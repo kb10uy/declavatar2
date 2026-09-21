@@ -196,7 +196,7 @@ return da.avatar({
     - Group and switch transitions have duration `0.0`. Raw transitions preserve the written `duration`, defaulting to `0.0`.
     - Write Defaults is on only for the generated state of a blend layer; group, switch, puppet and raw states use off. The raw Lua API does not expose a Write Defaults option.
 - Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
-- Not done yet: the `interop` encoder and decoder for the compiled model, the C FFI compile/blob API, the Unity client, Lua/declaration support for keyed curves, and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
+- Not done yet: the C FFI compile/blob API, the Unity client, Lua/declaration support for keyed curves, and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
 
 ### Animation Model
 

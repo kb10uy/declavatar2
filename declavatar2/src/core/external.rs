@@ -27,6 +27,10 @@ impl<K: ExternKind> Extern<K> {
     pub fn index(&self) -> u32 {
         self.index
     }
+
+    pub(crate) fn from_index(index: u32) -> Self {
+        Self { index, _kind: PhantomData }
+    }
 }
 
 impl<K: ExternKind> Debug for Extern<K> {
@@ -129,6 +133,16 @@ impl<K: ExternKind> ExternTable<K> {
         Self::default()
     }
 
+    pub(crate) fn from_entries(entries: Vec<ExternEntry<K>>) -> Result<Self, K::Value> {
+        let mut lookup = BTreeMap::new();
+        for (index, entry) in entries.iter().enumerate() {
+            if lookup.insert(entry.value.clone(), index as u32).is_some() {
+                return Err(entry.value.clone());
+            }
+        }
+        Ok(Self { entries, lookup })
+    }
+
     pub fn intern(&mut self, unresolved: Unresolved<K::Value>) -> Extern<K> {
         let Unresolved { value, at } = unresolved;
         let index = *self.lookup.entry(value.clone()).or_insert_with(|| {
@@ -170,6 +184,7 @@ mod tests {
 
     use super::*;
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     enum TestKind {}
 
     impl ExternKind for TestKind {
@@ -241,5 +256,29 @@ mod tests {
             },
         ];
         assert_eq!(rmp_serde::to_vec(&table).unwrap(), rmp_serde::to_vec(&expected).unwrap());
+    }
+
+    #[rstest]
+    fn from_entries_rebuilds_the_lookup_and_rejects_duplicates() {
+        let entries = vec![
+            ExternEntry::<TestKind> {
+                value: "Body".into(),
+                referenced_at: vec![at(2)],
+            },
+            ExternEntry::<TestKind> {
+                value: "Armature/Hips".into(),
+                referenced_at: vec![],
+            },
+        ];
+        let table = ExternTable::from_entries(entries.clone()).unwrap();
+        assert_eq!(table.entries(), entries);
+        assert_eq!(table.get(Extern::from_index(1)).value, "Armature/Hips");
+
+        let mut duplicated = ExternTable::<TestKind>::new();
+        duplicated.intern(Unresolved::new("Armature/Hips".into()));
+        assert_eq!(duplicated.get(Extern::from_index(0)).value, "Armature/Hips");
+
+        let entries = vec![entries[0].clone(), entries[0].clone()];
+        assert_eq!(ExternTable::from_entries(entries).unwrap_err(), "Body");
     }
 }
