@@ -17,20 +17,10 @@ use crate::{
 
 /// Compiles the menu block. An item that fails is dropped and its error recorded, so every item gets checked.
 pub(crate) fn compile(context: &Context, items: &[menu::MenuItem], errors: &mut Vec<TransformError>) -> Vec<MenuItem> {
-    self::items(context, "root", items, errors)
+    self::items(context, items, errors)
 }
 
-fn items(context: &Context, owner: &str, items: &[menu::MenuItem], errors: &mut Vec<TransformError>) -> Vec<MenuItem> {
-    if items.len() > MenuItem::CAPACITY {
-        errors.push(
-            TransformErrorKind::MenuTooLarge {
-                name: owner.to_owned(),
-                count: items.len(),
-                capacity: MenuItem::CAPACITY,
-            }
-            .into(),
-        );
-    }
+fn items(context: &Context, items: &[menu::MenuItem], errors: &mut Vec<TransformError>) -> Vec<MenuItem> {
     items
         .iter()
         .filter_map(|item| match self::item(context, item, errors) {
@@ -47,7 +37,7 @@ fn item(context: &Context, item: &menu::MenuItem, errors: &mut Vec<TransformErro
     Ok(match item {
         menu::MenuItem::SubMenu { name, items: children } => MenuItem::SubMenu {
             name: name.clone(),
-            items: items(context, name, children, errors),
+            items: items(context, children, errors),
         },
         menu::MenuItem::Toggle { name, drive } => {
             let (parameter, value) = context.drive(drive)?;
@@ -365,33 +355,5 @@ mod tests {
             panic!("expected a submenu");
         };
         assert_eq!(items.len(), 1);
-    }
-
-    #[rstest]
-    fn a_menu_holds_eight_controls_at_most() {
-        let toggle = menu::MenuItem::Toggle {
-            name: "Hat".into(),
-            drive: Drive::Switch {
-                layer: "Hat".to_owned().into(),
-                value: None,
-            },
-        };
-        let (compiled, errors) = run(vec![menu::MenuItem::SubMenu {
-            name: "Sub".into(),
-            items: vec![toggle; 9],
-        }]);
-
-        assert_eq!(
-            errors,
-            vec![
-                TransformErrorKind::MenuTooLarge {
-                    name: "Sub".into(),
-                    count: 9,
-                    capacity: 8,
-                }
-                .into()
-            ]
-        );
-        assert_eq!(compiled.len(), 1);
     }
 }

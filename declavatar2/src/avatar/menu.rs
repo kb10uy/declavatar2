@@ -36,9 +36,6 @@ pub enum MenuItem {
 }
 
 impl MenuItem {
-    /// How many controls one menu can hold.
-    pub const CAPACITY: usize = 8;
-
     pub fn name(&self) -> &str {
         match self {
             MenuItem::SubMenu { name, .. }

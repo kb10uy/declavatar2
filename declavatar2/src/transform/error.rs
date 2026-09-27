@@ -190,9 +190,6 @@ pub enum TransformErrorKind {
 
     #[error("an axis takes a parameter name or `da.drive_puppet(layer)` without a value")]
     InvalidAxis,
-
-    #[error("menu `{name}` holds {count} controls, but a menu can hold {capacity} at most")]
-    MenuTooLarge { name: String, count: usize, capacity: usize },
 }
 
 impl TransformErrorKind {

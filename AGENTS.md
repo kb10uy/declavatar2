@@ -217,7 +217,7 @@ return da.avatar({
     - The reach is one controller because the Unity client builds one NDMF virtual controller and one MA Merge Animator per controller. When a plugin pass that does not use `AnimatorServicesContext` runs between generating and MA's merge, NDMF finalizes each controller on its own, and a reference into another controller cannot be turned into a layer index: it becomes `-1` and the behavior is dropped silently. A reference within one controller survives that, and whether such a pass runs depends on the other plugins of the avatar, so the client cannot repair it.
     - Two layers of one name never reach the layer control, within one controller or across controllers, because layer names are already unique across the avatar (`DuplicateLayer`), so no separate ambiguity check exists.
     - `da.play_audio` interns its source into the object path table and its clips into the asset table, and resolves `parameter` as an int parameter.
-- Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
+- Menu: the number of controls in a menu is not limited; a menu holding more than VRChat can show is left to the client. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
 - Not done yet: the Unity client and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
 
 ### Animation Model
