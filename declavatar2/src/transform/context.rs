@@ -25,13 +25,20 @@ pub(crate) struct Context {
     pub layers: BTreeMap<String, LayerInfo>,
     pub layer_positions: BTreeMap<String, LayerPosition>,
 
-    /// The playable layer of each controller, in declaration order.
-    pub playables: Vec<PlayableLayer>,
+    /// What each controller is bound to, in declaration order.
+    pub controllers: Vec<ControllerInfo>,
 
     /// The controller whose layers the 2nd pass is compiling.
     pub current_controller: Option<usize>,
 
     pub externals: Externals,
+}
+
+/// The playable layer and priority of a controller, for resolving and reporting layer controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ControllerInfo {
+    pub playable: PlayableLayer,
+    pub priority: i32,
 }
 
 /// Where a declared layer ends up among the compiled controllers.
@@ -51,7 +58,14 @@ impl Context {
             parameters: ParameterTable::default(),
             layers: BTreeMap::new(),
             layer_positions: BTreeMap::new(),
-            playables: declaration.controllers.iter().map(|controller| controller.playable).collect(),
+            controllers: declaration
+                .controllers
+                .iter()
+                .map(|controller| ControllerInfo {
+                    playable: controller.playable,
+                    priority: controller.priority.unwrap_or(0),
+                })
+                .collect(),
             current_controller: None,
             externals: Externals::default(),
         };
@@ -658,7 +672,10 @@ mod tests {
     fn layers_are_recorded_where_they_are_compiled() {
         let (context, errors) = collect(Avatar {
             controllers: vec![
-                Controller::new(PlayableLayer::Gesture, vec![group("Left", None, &[], 1)]),
+                Controller {
+                    priority: Some(-5),
+                    ..Controller::new(PlayableLayer::Gesture, vec![group("Left", None, &[], 1)])
+                },
                 Controller::new(
                     PlayableLayer::Fx,
                     vec![
@@ -675,7 +692,19 @@ mod tests {
         });
 
         assert!(errors.is_empty(), "{errors:?}");
-        assert_eq!(context.playables, [PlayableLayer::Gesture, PlayableLayer::Fx]);
+        assert_eq!(
+            context.controllers,
+            [
+                ControllerInfo {
+                    playable: PlayableLayer::Gesture,
+                    priority: -5,
+                },
+                ControllerInfo {
+                    playable: PlayableLayer::Fx,
+                    priority: 0,
+                },
+            ]
+        );
         let position = |controller, layer, merged_into: Option<&str>| LayerPosition {
             controller,
             layer,

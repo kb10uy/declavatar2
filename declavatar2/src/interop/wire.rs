@@ -77,18 +77,11 @@ pub enum DecodeError {
     #[error("{what} {key} appears more than once")]
     Duplicate { what: &'static str, key: String },
 
-    #[error("controller index {index} is out of range for an avatar of {len} controllers")]
-    ControllerOutOfRange { index: usize, len: usize },
-
     #[error("layer index {index} is out of range for controller {controller} of {len} layers")]
     LayerOutOfRange { controller: usize, index: usize, len: usize },
 
-    #[error("a layer control in a {expected:?} controller refers to controller {controller}, which is {found:?}")]
-    LayerInAnotherPlayable {
-        controller: usize,
-        expected: PlayableLayer,
-        found: PlayableLayer,
-    },
+    #[error("a layer control in controller {holder} refers to controller {controller}, but it can only refer to its own controller")]
+    LayerInAnotherController { holder: usize, controller: usize },
 
     #[error("a layer control is held by a {0:?} controller, whose layers cannot be controlled")]
     UncontrollablePlayable(PlayableLayer),

@@ -1051,12 +1051,12 @@ fn layer_named(name: &str) -> AnimatorLayer {
 }
 
 #[rstest]
-#[case::own_layer(vec![controlling(PlayableLayer::Fx, LayerRef { controller: 0, layer: 0 })])]
-#[case::same_playable(vec![
-    controlling(PlayableLayer::Gesture, LayerRef { controller: 1, layer: 1 }),
-    controller(PlayableLayer::Gesture, vec![], vec![layer_named("A"), layer_named("B")]),
+#[case::first_controller(vec![controlling(PlayableLayer::Fx, LayerRef { controller: 0, layer: 0 })])]
+#[case::later_controller(vec![
+    controller(PlayableLayer::Fx, vec![], vec![layer_named("A")]),
+    controlling(PlayableLayer::Gesture, LayerRef { controller: 1, layer: 0 }),
 ])]
-fn a_layer_control_may_reach_any_controller_of_its_playable(#[case] controllers: Vec<PlayableController>) {
+fn a_layer_control_reaches_a_layer_of_its_own_controller(#[case] controllers: Vec<PlayableController>) {
     let avatar = Avatar {
         controllers,
         ..Avatar::default()
@@ -1067,21 +1067,32 @@ fn a_layer_control_may_reach_any_controller_of_its_playable(#[case] controllers:
 #[rstest]
 #[case::controller_out_of_range(
     vec![controlling(PlayableLayer::Fx, LayerRef { controller: 1, layer: 0 })],
-    DecodeError::ControllerOutOfRange { index: 1, len: 1 },
+    DecodeError::LayerInAnotherController { holder: 0, controller: 1 },
+)]
+#[case::later_controller_of_the_same_playable(
+    vec![
+        controlling(PlayableLayer::Gesture, LayerRef { controller: 1, layer: 1 }),
+        controller(PlayableLayer::Gesture, vec![], vec![layer_named("A"), layer_named("B")]),
+    ],
+    DecodeError::LayerInAnotherController { holder: 0, controller: 1 },
+)]
+#[case::earlier_controller_of_the_same_playable(
+    vec![controller(PlayableLayer::Fx, vec![], vec![layer_named("A")]), controlling(PlayableLayer::Fx, LayerRef { controller: 0, layer: 0 })],
+    DecodeError::LayerInAnotherController { holder: 1, controller: 0 },
+)]
+#[case::another_playable(
+    vec![controlling(PlayableLayer::Fx, LayerRef { controller: 1, layer: 0 }), controller(PlayableLayer::Action, vec![], vec![layer_named("A")])],
+    DecodeError::LayerInAnotherController { holder: 0, controller: 1 },
 )]
 #[case::layer_out_of_range(
     vec![controlling(PlayableLayer::Fx, LayerRef { controller: 0, layer: 1 })],
     DecodeError::LayerOutOfRange { controller: 0, index: 1, len: 1 },
 )]
-#[case::another_playable(
-    vec![controlling(PlayableLayer::Fx, LayerRef { controller: 1, layer: 0 }), controller(PlayableLayer::Action, vec![], vec![layer_named("A")])],
-    DecodeError::LayerInAnotherPlayable { controller: 1, expected: PlayableLayer::Fx, found: PlayableLayer::Action },
-)]
 #[case::uncontrollable(
     vec![controlling(PlayableLayer::Base, LayerRef { controller: 0, layer: 0 })],
     DecodeError::UncontrollablePlayable(PlayableLayer::Base),
 )]
-fn a_layer_control_outside_its_playable_is_rejected(#[case] controllers: Vec<PlayableController>, #[case] expected: DecodeError) {
+fn a_layer_control_outside_its_own_controller_is_rejected(#[case] controllers: Vec<PlayableController>, #[case] expected: DecodeError) {
     let avatar = Avatar {
         controllers,
         ..Avatar::default()

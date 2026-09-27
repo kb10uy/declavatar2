@@ -67,10 +67,10 @@ impl Context {
         })
     }
 
-    /// The position of a layer that a layer control in the current controller may reach.
+    /// The position of a layer that a layer control in the current controller may reach: a layer of that controller only.
     fn controlled_layer(&self, reference: &Unresolved<String>) -> Result<LayerRef, TransformError> {
         let current = self.current_controller.expect("state behaviors are compiled inside a controller");
-        let playable = self.playables[current];
+        let playable = self.controllers[current].playable;
         if BlendablePlayable::of(playable).is_none() {
             return Err(TransformErrorKind::UncontrollablePlayable { playable }.at(reference.at.clone()));
         }
@@ -84,12 +84,20 @@ impl Context {
             }
             .at(reference.at.clone()));
         }
-        let found = self.playables[position.controller];
-        if found != playable {
+        let found = self.controllers[position.controller];
+        if found.playable != playable {
             return Err(TransformErrorKind::LayerInAnotherPlayable {
                 name: reference.value.clone(),
                 expected: playable,
-                found,
+                found: found.playable,
+            }
+            .at(reference.at.clone()));
+        }
+        if position.controller != current {
+            return Err(TransformErrorKind::LayerInAnotherController {
+                name: reference.value.clone(),
+                playable: found.playable,
+                priority: found.priority,
             }
             .at(reference.at.clone()));
         }

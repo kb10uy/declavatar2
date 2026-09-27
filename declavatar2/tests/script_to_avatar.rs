@@ -487,7 +487,7 @@ return da.avatar({
                 da.raw.state("Idle", { behaviors = {
                     da.layer_control("Hat", { goal_weight = 0, blend_duration = 0.5 }),
                     da.layer_control("Face"),
-                    da.layer_control("Late"),
+                    da.layer_control("Control"),
                     da.locomotion(false),
                     da.pose_space("enter", { delay = 0.5, fixed_delay = false }),
                     da.playable_control("action", { goal_weight = 0 }),
@@ -504,7 +504,7 @@ return da.avatar({
         }),
         da.controller("fx", { priority = 10 }, {
             da.raw.layer("Late", {}, {
-                da.raw.state("Only", { behaviors = { da.layer_control("Control") } }),
+                da.raw.state("Only", { behaviors = { da.layer_control("Late") } }),
             }),
         }),
     },
@@ -524,14 +524,14 @@ fn layer_control(controller: usize, layer: usize, goal_weight: f64, blend_durati
 }
 
 #[rstest]
-fn a_layer_control_reaches_any_layer_of_its_playable_layer_by_name() {
+fn a_layer_control_reaches_a_layer_of_its_own_controller_by_name() {
     let avatar = compile(LAYER_CONTROLS, "avatar.lua", &EvaluateOptions::new()).expect("the script should compile");
 
     assert_eq!(
         behaviors_of(&avatar, 0, 1)[..3],
-        [layer_control(0, 0, 0.0, 0.5), layer_control(0, 2, 1.0, 0.0), layer_control(2, 0, 1.0, 0.0)]
+        [layer_control(0, 0, 0.0, 0.5), layer_control(0, 2, 1.0, 0.0), layer_control(0, 1, 1.0, 0.0)]
     );
-    assert_eq!(behaviors_of(&avatar, 2, 0), [layer_control(0, 1, 1.0, 0.0)]);
+    assert_eq!(behaviors_of(&avatar, 2, 0), [layer_control(2, 0, 1.0, 0.0)]);
 
     let blob = declavatar2::interop::encode_avatar(&avatar).expect("the avatar should encode");
     assert_eq!(declavatar2::interop::decode_avatar(&blob).expect("the blob should decode"), avatar);
@@ -640,6 +640,7 @@ return da.avatar({
             control("ByIndex", da.behavior("VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl", { layer = 1, goalWeight = 1 })),
             control("ByShortIndex", da.behavior("VRCAnimatorLayerControl", { layer = 1 })),
             control("Voice", da.play_audio("Speaker", { parameter = "Blend" }, {})),
+            control("Elsewhere", da.layer_control("Late")),
         }),
         da.controller("gesture", {
             da.switch_layer("Wave", { driven_by = "Hat" }, { da.object("Wave"):active() }),
@@ -649,6 +650,9 @@ return da.avatar({
         }),
         da.controller("sitting", {
             control("Seated", da.layer_control("Nowhere")),
+        }),
+        da.controller("fx", { priority = 10 }, {
+            control("Late", da.layer_control("Hat")),
         }),
     },
 })
@@ -664,16 +668,32 @@ return da.avatar({
             "avatar.lua:18: `VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl` takes a layer index that the script cannot know; write `da.layer_control(layer, ...)` with the layer name instead",
             "avatar.lua:19: `VRCAnimatorLayerControl` takes a layer index that the script cannot know; write `da.layer_control(layer, ...)` with the layer name instead",
             "avatar.lua:20: parameter `Blend` is Float, but Int is needed here",
-            "avatar.lua:26: a layer control cannot be used in a Base controller; only Action, Fx, Gesture and Additive layers can be controlled",
-            "avatar.lua:29: a layer control cannot be used in a Sitting controller; only Action, Fx, Gesture and Additive layers can be controlled",
+            "avatar.lua:21: layer `Late` is in another Fx controller (priority 10), but a layer control can only reach layers of the controller that holds its state",
+            "avatar.lua:27: a layer control cannot be used in a Base controller; only Action, Fx, Gesture and Additive layers can be controlled",
+            "avatar.lua:30: a layer control cannot be used in a Sitting controller; only Action, Fx, Gesture and Additive layers can be controlled",
+            "avatar.lua:33: layer `Hat` is in another Fx controller (priority 0), but a layer control can only reach layers of the controller that holds its state",
         ]
     );
 }
 
 #[rstest]
-fn a_layer_name_written_twice_in_one_playable_layer_is_rejected_before_a_layer_control_could_pick_one() {
-    let errors = errors_of(
-        r#"local da = require "declavatar"
+#[case::same_controller(
+    r#"local da = require "declavatar"
+return da.avatar({
+    parameters = { da.bool("Hat") },
+    controllers = {
+        da.controller("fx", {
+            da.switch_layer("Hat", {}, { da.object("Hat"):active() }),
+            da.raw.layer("Control", {}, { da.raw.state("Only", { behaviors = { da.layer_control("Hat") } }) }),
+            da.switch_layer("Hat", {}, { da.object("Hat"):active() }),
+        }),
+    },
+})
+"#,
+    "avatar.lua:8: layer `Hat` is declared more than once"
+)]
+#[case::another_controller(
+    r#"local da = require "declavatar"
 return da.avatar({
     parameters = { da.bool("Hat") },
     controllers = {
@@ -687,9 +707,10 @@ return da.avatar({
     },
 })
 "#,
-    );
-
-    assert_eq!(errors, vec!["avatar.lua:10: layer `Hat` is declared more than once"]);
+    "avatar.lua:10: layer `Hat` is declared more than once"
+)]
+fn a_layer_name_written_twice_is_rejected_before_a_layer_control_could_pick_one(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(errors_of(source), vec![expected]);
 }
 
 #[rstest]

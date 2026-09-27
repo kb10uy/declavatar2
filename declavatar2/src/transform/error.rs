@@ -177,6 +177,11 @@ pub enum TransformErrorKind {
         found: PlayableLayer,
     },
 
+    #[error(
+        "layer `{name}` is in another {playable:?} controller (priority {priority}), but a layer control can only reach layers of the controller that holds its state"
+    )]
+    LayerInAnotherController { name: String, playable: PlayableLayer, priority: i32 },
+
     #[error("layer `{name}` is merged into blend layer `{blend}`, so its weight cannot be controlled on its own")]
     LayerMergedIntoBlend { name: String, blend: String },
 

@@ -272,7 +272,7 @@ impl Decode for Avatar {
     }
 }
 
-/// Checks every `LayerControl` against the controllers, which are only all known once the list has been read.
+/// Checks that every `LayerControl` points into the controller holding it, which is only known once the list has been read.
 fn check_layer_controls(controllers: &[PlayableController]) -> Result<(), DecodeError> {
     let behaviors = controllers.iter().enumerate().flat_map(|(index, controller)| {
         controller
@@ -292,20 +292,10 @@ fn check_layer_controls(controllers: &[PlayableController]) -> Result<(), Decode
             return Err(DecodeError::UncontrollablePlayable(playable));
         }
         let LayerRef { controller, layer } = control.layer;
-        let Some(target) = controllers.get(controller) else {
-            return Err(DecodeError::ControllerOutOfRange {
-                index: controller,
-                len: controllers.len(),
-            });
-        };
-        if target.playable != playable {
-            return Err(DecodeError::LayerInAnotherPlayable {
-                controller,
-                expected: playable,
-                found: target.playable,
-            });
+        if controller != index {
+            return Err(DecodeError::LayerInAnotherController { holder: index, controller });
         }
-        let len = target.controller.layers.len();
+        let len = controllers[index].controller.layers.len();
         if layer >= len {
             return Err(DecodeError::LayerOutOfRange { controller, index: layer, len });
         }

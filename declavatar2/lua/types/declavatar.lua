@@ -607,8 +607,9 @@ function da.behavior(type_name, fields) end
 
 --- Blends the weight of a layer declared in this avatar.
 ---
---- The layer belongs to the same playable layer as the controller holding the state, which is
---- action, fx, gesture or additive; it may sit in another controller of that playable layer.
+--- The layer belongs to the controller holding the state, which is action, fx, gesture or
+--- additive. A layer of another controller cannot be named, even one of the same playable layer,
+--- because the client may finalize each controller on its own, where such an index is unknown.
 --- A child of `da.blend_layer` is merged into it and cannot be named on its own.
 ---@param layer string
 ---@param options? da.WeightOptions

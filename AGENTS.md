@@ -213,8 +213,9 @@ return da.avatar({
     - Group and switch transitions have duration `0.0`. Raw transitions preserve the written `duration`, defaulting to `0.0`.
     - Write Defaults is on only for the generated state of a blend layer; group, switch, puppet and raw states use off. The raw Lua API does not expose a Write Defaults option.
 - State behaviors
-    - A layer control resolves to a `LayerRef`: the index of the controller in `Avatar.controllers` and of the layer in that controller. The controller holding the state must be Action, FX, Gesture or Additive, and the named layer must belong to a controller of the same playable layer, which may be another controller of that playable layer (a different priority, say). A child of a blend layer is merged and cannot be named. Each is a located error, as is an unknown layer.
-    - Two layers of one name never reach the layer control, because layer names are already unique across the avatar (`DuplicateLayer`), so no separate ambiguity check exists.
+    - A layer control resolves to a `LayerRef`: the index of the controller in `Avatar.controllers` and of the layer in that controller. The controller holding the state must be Action, FX, Gesture or Additive, and the named layer must belong to that same controller. A layer of another playable layer and a layer of another controller of the same playable layer (a different priority, say) are separate errors; the latter names the controller it found by playable layer and priority. A child of a blend layer is merged and cannot be named. Each is a located error, as is an unknown layer.
+    - The reach is one controller because the Unity client builds one NDMF virtual controller and one MA Merge Animator per controller. When a plugin pass that does not use `AnimatorServicesContext` runs between generating and MA's merge, NDMF finalizes each controller on its own, and a reference into another controller cannot be turned into a layer index: it becomes `-1` and the behavior is dropped silently. A reference within one controller survives that, and whether such a pass runs depends on the other plugins of the avatar, so the client cannot repair it.
+    - Two layers of one name never reach the layer control, within one controller or across controllers, because layer names are already unique across the avatar (`DuplicateLayer`), so no separate ambiguity check exists.
     - `da.play_audio` interns its source into the object path table and its clips into the asset table, and resolves `parameter` as an int parameter.
 - Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
 - Not done yet: the Unity client and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
@@ -235,7 +236,7 @@ return da.avatar({
 - Rust side: a hand-written `Encode` / `Decode` per type in a `declavatar2::interop` module, with explicit discriminator constants. `serde` and `rmp-serde` are not dependencies.
 - C# side: a hand-written reader mirroring the Rust encoder one to one. No serialization library dependency.
 - Externals come first in the avatar payload so the client can resolve every table before reading the body that indexes into them.
-- A `LayerRef` carries no playable layer, since the referenced controller has one. Its indices are checked only after the whole controller list is decoded, because a layer control may point at a later controller.
+- A `LayerRef` keeps its controller index although it always equals the controller holding the state, so the wire layout of data version 3 stays as released. It carries no playable layer, since that controller has one. A reader checks the index against the holding controller after the controller list is decoded.
 - How the FFI hands the blob over is decided in the C FFI section.
 
 ### C FFI

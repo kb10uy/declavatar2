@@ -288,7 +288,7 @@ Behavior: enum
                            delay f64, play_on_enter bool, stop_on_enter bool, play_on_exit bool, stop_on_exit bool
 
 LayerRef:
-  controller : u32                         (index into Avatar.controllers)
+  controller : u32                         (index into Avatar.controllers; always the controller holding the state)
   layer      : u32                         (index into the layers of that controller)
 
 playable: 0 Action, 1 Fx, 2 Gesture, 3 Additive
@@ -327,8 +327,10 @@ GenericValue: enum
 A `LayerControl` names the layer it blends by position rather than by an animator layer index, because the index a layer ends up at is only known once the client has merged the controllers. The client finds `controllers[controller]`, takes the animator layer it generated for `layers[layer]`, and writes that layer's final index and the controller's playable layer into the component. The following hold for every `LayerControl`; a reader checks them once the whole controller list has been read and rejects the avatar otherwise:
 
 - The controller holding the state is `Action`, `Fx`, `Gesture` or `Additive`.
-- `controller` is in range for `Avatar.controllers`, and `layer` is in range for the layers of that controller.
-- The referenced controller has the same `playable` as the controller holding the state. It may be a different controller, such as one of another priority.
+- `controller` is the index of the controller holding the state itself, never another controller, even one of the same `playable`.
+- `layer` is in range for the layers of that controller.
+
+The controller index is redundant with the position of the state, and is kept so that a reference names its layer on its own. A reference into another controller is excluded because the client may have to finalize each controller on its own before they are merged, and a layer index into another controller cannot be known at that point.
 
 `playable` of a `PlayableLayerControl` and the `PlaybackOrder` and apply discriminators follow the numbering of the VRChat enums they stand for. `enter` of a `TemporaryPoseSpace` is `true` for Enter and `false` for Exit; `delay` is in seconds when `fixed_delay` is `true` and a fraction of the state otherwise. A `PlayAudio` without a `source` plays the AudioSource on the root that the controller's object paths start at: the avatar root, or the supplied root for a relative controller. A source path is resolved like any other object path of that controller.
 
