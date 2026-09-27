@@ -707,6 +707,9 @@ function da.raw.state(name, options, outgoing) end
 ---
 --- Inside a state the source is implied, so `from` is left out. A table in the second
 --- place is the options table, which is how the three argument forms are told apart.
+---
+--- With an empty condition list the transition leaves once the motion of its source state
+--- has played to the end (exit time 1).
 ---@param from da.StateValue
 ---@param to da.StateValue
 ---@param options da.TransitionOptions
