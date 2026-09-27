@@ -146,6 +146,7 @@ Lua script
 
 - `da.submenu(name, items)`, `da.toggle(name, drive)`, `da.button(name, drive)`, `da.radial(name, axis)`, two-axis and four-axis puppets.
 - An axis is a parameter name, a `da.drive_puppet(...)`, or `da.axis(target, { positive, negative })` when labels are needed.
+- Labels are only accepted where VRChat shows them, and the models cannot hold the others. A two-axis puppet shows four labels, so both ends of both axes take one. A four-axis puppet shows one label per direction, written as `positive`; `negative` is an error. A radial puppet shows none, so it holds a bare parameter and a labelled `da.axis` is an error.
 - `da.two_axis(name, { horizontal, vertical })` and `da.four_axis(name, { up, down, left, right })` name their axes rather than ordering them, because four directions in a row read as a puzzle. Every axis is required and an unknown key is an error, as in any options table.
 - Drives: `da.drive_group(layer, option)`, `da.drive_switch(layer[, bool])`, `da.drive_puppet(layer[, value])`, `da.drive_bool(parameter, value)`, `da.drive_int(parameter, value)`, `da.drive_float(parameter, value)`.
 

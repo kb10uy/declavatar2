@@ -16,7 +16,8 @@ use crate::{
     EvaluateOptions,
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Behavior, BlendTree, Clip, DirectBlendTree, DirectField,
-        MenuAxis, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource, TransitionTarget,
+        MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
+        TransitionTarget,
     },
     compile,
     core::{
@@ -203,6 +204,13 @@ fn axis(positive: Option<&str>, negative: Option<&str>) -> MenuAxis {
         parameter: param("Float"),
         positive: positive.map(Into::into),
         negative: negative.map(Into::into),
+    }
+}
+
+fn direction(label: Option<&str>) -> MenuDirection {
+    MenuDirection {
+        parameter: param("Float"),
+        label: label.map(Into::into),
     }
 }
 
@@ -629,12 +637,12 @@ enum_cases! {
         round_trip(value);
     }
     cases {
-        sub_menu: MenuItem::SubMenu { .. } => MenuItem::SubMenu { name: "Emotes".into(), items: vec![MenuItem::Radial { name: "Blend".into(), axis: axis(None, None) }] },
+        sub_menu: MenuItem::SubMenu { .. } => MenuItem::SubMenu { name: "Emotes".into(), items: vec![MenuItem::Radial { name: "Blend".into(), parameter: param("Float") }] },
         toggle: MenuItem::Toggle { .. } => MenuItem::Toggle { name: "Hat".into(), parameter: param("Bool"), value: AnimatedValue::Bool(true) },
         button: MenuItem::Button { .. } => MenuItem::Button { name: "Wave".into(), parameter: param("Int"), value: AnimatedValue::Int(3) },
-        radial: MenuItem::Radial { .. } => MenuItem::Radial { name: "Blend".into(), axis: axis(Some("More"), None) },
+        radial: MenuItem::Radial { .. } => MenuItem::Radial { name: "Blend".into(), parameter: param("Float") },
         two_axis: MenuItem::TwoAxis { .. } => MenuItem::TwoAxis { name: "Look".into(), horizontal: axis(Some("Right"), Some("Left")), vertical: axis(None, Some("Down")) },
-        four_axis: MenuItem::FourAxis { .. } => MenuItem::FourAxis { name: "Move".into(), up: axis(None, None), down: axis(Some("D"), None), left: axis(None, Some("L")), right: axis(Some("R"), Some("R-")) },
+        four_axis: MenuItem::FourAxis { .. } => MenuItem::FourAxis { name: "Move".into(), up: direction(None), down: direction(Some("D")), left: direction(None), right: direction(Some("R")) },
     }
 }
 

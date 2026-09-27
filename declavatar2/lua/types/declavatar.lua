@@ -220,6 +220,8 @@ local da = {}
 ---@field x? string
 ---@field y? string
 
+--- Labels of the two ends of an axis. Only a two-axis puppet shows both; a four-axis
+--- direction shows `positive` alone, and a radial puppet shows neither.
 ---@class da.AxisOptions
 ---@field positive? string
 ---@field negative? string
@@ -228,6 +230,7 @@ local da = {}
 ---@field horizontal da.AxisValue
 ---@field vertical da.AxisValue
 
+--- Each direction shows the `positive` label of its axis; `negative` is an error.
 ---@class da.FourAxisOptions
 ---@field up da.AxisValue
 ---@field down da.AxisValue
@@ -577,6 +580,7 @@ function da.toggle(name, drive) end
 ---@return da.MenuItem
 function da.button(name, drive) end
 
+--- Radial puppet. VRChat shows no labels on it, so `da.axis` given here takes no labels.
 ---@param name string
 ---@param axis da.AxisValue
 ---@return da.MenuItem
@@ -588,7 +592,7 @@ function da.radial(name, axis) end
 ---@return da.MenuItem
 function da.two_axis(name, axes) end
 
---- Four axis puppet. Every direction is named rather than ordered.
+--- Four axis puppet. Every direction is named rather than ordered, and shows one label.
 ---@param name string
 ---@param axes da.FourAxisOptions
 ---@return da.MenuItem

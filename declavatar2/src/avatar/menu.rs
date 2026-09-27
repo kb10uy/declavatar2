@@ -19,7 +19,7 @@ pub enum MenuItem {
     },
     Radial {
         name: String,
-        axis: MenuAxis,
+        parameter: ParameterRef,
     },
     TwoAxis {
         name: String,
@@ -28,10 +28,10 @@ pub enum MenuItem {
     },
     FourAxis {
         name: String,
-        up: MenuAxis,
-        down: MenuAxis,
-        left: MenuAxis,
-        right: MenuAxis,
+        up: MenuDirection,
+        down: MenuDirection,
+        left: MenuDirection,
+        right: MenuDirection,
     },
 }
 
@@ -51,10 +51,17 @@ impl MenuItem {
     }
 }
 
-/// Float parameter a puppet control moves, with optional labels for its ends.
+/// Float parameter one axis of a two-axis puppet moves, with optional labels for its ends.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuAxis {
     pub parameter: ParameterRef,
     pub positive: Option<String>,
     pub negative: Option<String>,
+}
+
+/// One direction of a four-axis puppet: the float parameter it moves, and the one label shown at its end.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MenuDirection {
+    pub parameter: ParameterRef,
+    pub label: Option<String>,
 }

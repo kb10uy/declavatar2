@@ -6,7 +6,7 @@ pub enum MenuItem {
     SubMenu { name: String, items: Vec<MenuItem> },
     Toggle { name: String, drive: Drive },
     Button { name: String, drive: Drive },
-    Radial { name: String, axis: Box<Axis> },
+    Radial { name: String, target: AxisTarget },
     TwoAxis { name: String, axes: Box<TwoAxes> },
     FourAxis { name: String, axes: Box<FourAxes> },
 }
@@ -31,17 +31,23 @@ pub struct TwoAxes {
     pub vertical: Axis,
 }
 
-/// Axes of a four-axis puppet.
+/// Directions of a four-axis puppet.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FourAxes {
-    pub up: Axis,
-    pub down: Axis,
-    pub left: Axis,
-    pub right: Axis,
+    pub up: Direction,
+    pub down: Direction,
+    pub left: Direction,
+    pub right: Direction,
 }
 
-/// One axis of a puppet menu item, with optional labels for its ends.
-/// A four-axis item uses `positive` as the label of its direction.
+/// One direction of a four-axis puppet, which shows a single label at its end.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Direction {
+    pub target: AxisTarget,
+    pub label: Option<String>,
+}
+
+/// One axis of a two-axis puppet, with optional labels for its ends.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Axis {
     pub target: AxisTarget,

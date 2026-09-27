@@ -307,15 +307,21 @@ MenuItem: enum
   0 SubMenu  : name string, items list<MenuItem>
   1 Toggle   : name string, parameter param, value AnimatedValue
   2 Button   : name string, parameter param, value AnimatedValue
-  3 Radial   : name string, axis MenuAxis
+  3 Radial   : name string, parameter param
   4 TwoAxis  : name string, horizontal MenuAxis, vertical MenuAxis
-  5 FourAxis : name string, up MenuAxis, down MenuAxis, left MenuAxis, right MenuAxis
+  5 FourAxis : name string, up MenuDirection, down MenuDirection, left MenuDirection, right MenuDirection
 
 MenuAxis:
   parameter : param
   positive  : option<string>
   negative  : option<string>
+
+MenuDirection:
+  parameter : param
+  label     : option<string>
 ```
+
+Labels appear only where VRChat can show them: both ends of each two-axis axis, one label per four-axis direction, and none on a radial puppet.
 
 ## Diagnostics Payload
 

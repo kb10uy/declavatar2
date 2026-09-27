@@ -7,8 +7,8 @@ use std::{
 use declavatar2::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, MenuAxis, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
-        TransitionTarget,
+        DirectField, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
+        TransitionSource, TransitionTarget,
     },
     core::{Compiled, Extern, Resolved, SourceLocation, Unresolved, value_set::ValueSet},
     interop::{Diagnostic, DiagnosticStage, Diagnostics, decode_avatar, decode_diagnostics, encode_avatar, encode_diagnostics},
@@ -630,6 +630,10 @@ fn menu() -> Vec<MenuItem> {
         positive: positive.map(Into::into),
         negative: negative.map(Into::into),
     };
+    let direction = |name: &str, label: Option<&str>| MenuDirection {
+        parameter: float(name),
+        label: label.map(Into::into),
+    };
     vec![
         MenuItem::SubMenu {
             name: "Emotes".into(),
@@ -646,7 +650,7 @@ fn menu() -> Vec<MenuItem> {
                 },
                 MenuItem::Radial {
                     name: "Blend".into(),
-                    axis: axis("Blend", None, None),
+                    parameter: float("Blend"),
                 },
                 MenuItem::TwoAxis {
                     name: "Look".into(),
@@ -655,10 +659,10 @@ fn menu() -> Vec<MenuItem> {
                 },
                 MenuItem::FourAxis {
                     name: "Move".into(),
-                    up: axis("Blend", Some("Forward"), None),
-                    down: axis("Weight", None, Some("Back")),
-                    left: axis("Blend", None, None),
-                    right: axis("Weight", Some("R"), Some("L")),
+                    up: direction("Blend", Some("Forward")),
+                    down: direction("Weight", Some("Back")),
+                    left: direction("Blend", None),
+                    right: direction("Weight", Some("R")),
                 },
                 MenuItem::SubMenu {
                     name: "Empty".into(),

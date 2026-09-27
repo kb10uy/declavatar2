@@ -12,7 +12,8 @@ use super::{
 use crate::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, MenuAxis, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource, TransitionTarget,
+        DirectField, MenuAxis, MenuDirection, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
+        TransitionTarget,
     },
     core::{
         external::{Extern, ExternEntry, ExternKind, ExternTable},
@@ -838,7 +839,7 @@ wire_enum! {
         0 SubMenu { name, items },
         1 Toggle { name, parameter, value },
         2 Button { name, parameter, value },
-        3 Radial { name, axis },
+        3 Radial { name, parameter },
         4 TwoAxis { name, horizontal, vertical },
         5 FourAxis { name, up, down, left, right },
     }
@@ -846,4 +847,5 @@ wire_enum! {
 
 wire_struct! {
     MenuAxis { parameter, positive, negative }
+    MenuDirection { parameter, label }
 }

@@ -9,7 +9,7 @@ pub use controller::{
     AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, BlendTree, Clip, DirectBlendTree, DirectField, Motion,
     ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource, TransitionTarget,
 };
-pub use menu::{MenuAxis, MenuItem};
+pub use menu::{MenuAxis, MenuDirection, MenuItem};
 
 /// Compiled avatar data: what the transform produces and the client consumes.
 /// Everything here is globally consistent, and every external reference is interned into `externals`.
