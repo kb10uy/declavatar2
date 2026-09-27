@@ -486,11 +486,52 @@ function da.drive_int(parameter, value) end
 ---@return da.Drive
 function da.drive_float(parameter, value) end
 
+--- Adds to an int or float parameter. Like the other drives below, this only runs in a state,
+--- so it is a behavior and cannot trigger a menu item.
+---@param parameter string
+---@param value number
+---@return da.Behavior
+function da.drive_add(parameter, value) end
+
+--- Sets an int parameter to a random value between `min` and `max`, both included.
+---@param parameter string
+---@param min integer
+---@param max integer
+---@return da.Behavior
+function da.drive_random_int(parameter, min, max) end
+
+--- Sets a bool parameter to true with the given chance.
+---@param parameter string
+---@param chance? number Between 0 and 1. Defaults to 0.5.
+---@return da.Behavior
+function da.drive_random_bool(parameter, chance) end
+
+--- Sets a float parameter to a random value between `min` and `max`.
+---@param parameter string
+---@param min number
+---@param max number
+---@return da.Behavior
+function da.drive_random_float(parameter, min, max) end
+
+--- Copies one parameter into another. With both ranges written, `from_range` is mapped onto `to_range`.
+---@param from string
+---@param to string
+---@param options? da.CopyOptions
+---@return da.Behavior
+function da.drive_copy(from, to, options) end
+
 --- Hands the named parts over to animation, or back to tracking.
 ---@param mode da.TrackingMode
 ---@param targets da.TrackingTargetList
 ---@return da.Behavior
 function da.tracking(mode, targets) end
+
+--- State behavior of any other type, whose fields are written as plain data and applied as they are.
+--- Parameter names, object paths and assets inside the fields are not checked.
+---@param type_name string Fully qualified type name, looked up by the client like a component type.
+---@param fields? table<string, da.GenericValue>
+---@return da.Behavior
+function da.behavior(type_name, fields) end
 
 --------------------------------------------------------------------------------
 -- Layers

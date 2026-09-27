@@ -1,5 +1,7 @@
 use std::{collections::BTreeMap, fmt::Debug};
 
+use crate::core::phase::{Declared, Phase};
+
 /// Traits for AnimatorController StateBehaviour definitions.
 ///
 /// Note: the spelling of `StateBehavior` is intentionally different from `StateBehaviour`.
@@ -22,8 +24,10 @@ impl Clone for Box<dyn StateBehavior> {
 /// State behavior whose type declavatar2 does not know about.
 /// Its fields are carried through the transform untouched, and the client applies them to the actual component.
 #[derive(Debug, Clone, PartialEq)]
-pub struct GenericStateBehavior {
-    pub type_name: String,
+pub struct GenericStateBehavior<Ph: Phase> {
+    /// Fully qualified type name, which goes through the same external reference table as a component type.
+    pub type_name: Ph::ComponentType,
+
     pub fields: BTreeMap<String, GenericValue>,
 }
 
@@ -39,9 +43,9 @@ pub enum GenericValue {
     Map(BTreeMap<String, GenericValue>),
 }
 
-impl StateBehavior for GenericStateBehavior {
+impl StateBehavior for GenericStateBehavior<Declared> {
     fn name(&self) -> &str {
-        &self.type_name
+        &self.type_name.value
     }
 
     fn clone(&self) -> Box<dyn StateBehavior> {
@@ -54,10 +58,11 @@ mod tests {
     use rstest::*;
 
     use super::*;
+    use crate::core::resolution::Unresolved;
 
-    fn physbone() -> GenericStateBehavior {
+    fn physbone() -> GenericStateBehavior<Declared> {
         GenericStateBehavior {
-            type_name: "VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl".into(),
+            type_name: Unresolved::new("VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl".into()),
             fields: BTreeMap::from([
                 ("layer".into(), GenericValue::Int(3)),
                 ("goalWeight".into(), GenericValue::Float(1.0)),

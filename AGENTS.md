@@ -97,9 +97,11 @@ Lua script
 #### State Behaviors
 
 - Parameter drives and tracking control stay typed, because the transform has to understand them: drives resolve layer references into concrete parameter values.
-- Any other state behavior is carried verbatim by `GenericStateBehavior`, which holds a type name and a tree of `GenericValue` (bool, integer, float, string, list, map). The transform passes it through untouched and the client feeds it to the actual component.
+- Drives that set a value (`da.drive_group`, `da.drive_switch`, `da.drive_puppet`, `da.drive_bool`, `da.drive_int`, `da.drive_float`) are `da.Drive` nodes, usable both in a state and on a menu item. Drives that only a state can run are `da.Behavior` nodes, so a menu item cannot take one: `da.drive_add(parameter, value)` (int or float parameter), `da.drive_random_int(parameter, min, max)`, `da.drive_random_bool(parameter[, chance])` (chance defaults to `0.5`), `da.drive_random_float(parameter, min, max)` and `da.drive_copy(from, to[, { from_range, to_range }])`, which becomes a ranged copy when both ranges are written. Their parameter types are checked in the 2nd pass.
+- Any other state behavior is written with `da.behavior(type_name[, fields])` and carried verbatim by `GenericStateBehavior`, which holds a type name and a tree of `GenericValue` (bool, integer, float, string, list, map). The transform passes the fields through untouched and the client feeds them to the actual component.
+- The type name goes through the component type `ExternTable`, like the type of `da.component`, so a type the client cannot find is reported at the line of `da.behavior`.
 - A generic payload holds plain data only. Parameter names, object paths and assets are not resolved or interned inside it, so it never takes part in reference checking.
-- The Lua builder for it is not exposed yet; only the data model exists.
+- In `fields`, a table with string keys is a map and a sequence is a list; an empty table is an empty list, and mixed or gapped tables are errors. `false` is a value here, not a dropped list entry.
 
 #### Controllers
 
@@ -233,7 +235,7 @@ return da.avatar({
 ### External References
 
 - v1 took a `Map<String, Asset>` ScriptableObject as compiler input. v2 reverses that: compilation needs nothing but the script and the symbols, and the resulting avatar enumerates what it requires.
-- `Externals` is that enumeration. Object paths, component types and assets each get an `ExternTable`, deduplicated, and the avatar body refers to them by index. Every entry carries `referenced_at`, so an unmet requirement is reported against the line that asked for it.
+- `Externals` is that enumeration. Object paths, component types and assets each get an `ExternTable`, deduplicated, and the avatar body refers to them by index. The component type table holds every Unity type name the client has to find, including the types of generic state behaviors. Every entry carries `referenced_at`, so an unmet requirement is reported against the line that asked for it.
 - `Externals.needs_relative_root` says whether any controller uses `PathMode::Relative`. It sits next to the tables because it is the same kind of request: something the client has to supply (the root object) before it can apply the avatar.
 - The client resolves the tables in index order and builds one array per kind, then reads the avatar body straight through it. No second compilation pass is involved. An object path is resolved against the avatar root or, for a relative controller, against the supplied root, so the same table entry may be looked up under both.
 - Resolving an asset is the client's job, as is checking that what it found matches the `asset_type` of a `Named` locator.

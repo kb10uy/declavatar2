@@ -93,7 +93,7 @@ AssetLocator: enum
   2 Named  : asset_type string, name string
 ```
 
-An `extern` anywhere in the body indexes the table of its kind: object paths, component types or assets. Indices are always in range for a blob the core produced; a reader still bounds-checks them.
+An `extern` anywhere in the body indexes the table of its kind: object paths, component types or assets. The component type table holds every Unity type name the body refers to: the component types of animated targets and the type names of generic state behaviors. The same entry can be referenced from both places. Indices are always in range for a blob the core produced; a reader still bounds-checks them.
 
 The object path table interns path strings independently of `path_mode`. The same index can therefore refer to different objects in absolute and relative controllers. The client resolves and caches objects by `(path_mode, index)`, against the avatar root for Absolute and the supplied root for Relative. It validates only combinations actually referenced by the body; a path used only in a relative controller need not exist under the avatar root. `needs_relative_root` requests the supplied root and does not require every path to resolve under both roots.
 
@@ -275,7 +275,7 @@ Where the model holds `AnimatedValue<()>` (menu controls and parameter drives), 
 Behavior: enum
   0 ParameterDrive  : target ParameterDriveTarget
   1 TrackingControl : modes u8 × 10
-  2 Generic         : type_name string, fields map<string, GenericValue>
+  2 Generic         : type_name extern (component type), fields map<string, GenericValue>
 
 ParameterDriveTarget: enum
   0 Set         : parameter param, value AnimatedValue

@@ -147,6 +147,13 @@ pub enum TransformErrorKind {
         value_type: AnimatedValueType,
     },
 
+    #[error("`{drive}` cannot be applied to parameter `{parameter}` of type {value_type:?}")]
+    UnsupportedDrive {
+        drive: &'static str,
+        parameter: String,
+        value_type: AnimatedValueType,
+    },
+
     #[error("a {expected:?} value is needed here, but a {found:?} value was written")]
     ValueTypeMismatch { expected: AnimatedValueType, found: AnimatedValueType },
 

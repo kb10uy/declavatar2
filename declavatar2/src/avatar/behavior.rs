@@ -9,5 +9,5 @@ use crate::{
 pub enum Behavior {
     ParameterDrive(ParameterDrive<Compiled>),
     TrackingControl(TrackingControl),
-    Generic(GenericStateBehavior),
+    Generic(GenericStateBehavior<Compiled>),
 }

@@ -562,7 +562,7 @@ enum_cases! {
     cases {
         parameter_drive: Behavior::ParameterDrive(_) => Behavior::ParameterDrive(ParameterDrive { target: ParameterDriveTarget::Set { parameter: param("Int"), value: AnimatedValue::Int(1) } }),
         tracking_control: Behavior::TrackingControl(_) => Behavior::TrackingControl(TrackingControl { values: HashMap::from([(TrackingControlTarget::Head, TrackingControlMode::Animation), (TrackingControlTarget::Mouth, TrackingControlMode::Tracking)]) }),
-        generic: Behavior::Generic(_) => Behavior::Generic(GenericStateBehavior { type_name: "VRCAnimatorLayerControl".into(), fields: BTreeMap::from([("goalWeight".to_string(), GenericValue::Float(1.0))]) }),
+        generic: Behavior::Generic(_) => Behavior::Generic(GenericStateBehavior { type_name: component_ref(1), fields: BTreeMap::from([("goalWeight".to_string(), GenericValue::Float(1.0))]) }),
     }
 }
 

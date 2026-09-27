@@ -795,7 +795,7 @@ wire_enum! {
 
 wire_struct! {
     ParameterDrive<Compiled> { target }
-    GenericStateBehavior { type_name, fields }
+    GenericStateBehavior<Compiled> { type_name, fields }
 }
 
 /// The wire order of tracking control targets, one byte each.

@@ -75,6 +75,7 @@ struct Refs {
     body: Extern<ObjectPath>,
     hat: Extern<ObjectPath>,
     light: Extern<ComponentType>,
+    layer_control: Extern<ComponentType>,
     material: Extern<Asset>,
     clip: Extern<Asset>,
     mask: Extern<Asset>,
@@ -89,6 +90,10 @@ fn externals() -> (Externals, Refs) {
     let light = externals
         .component_types
         .intern(Unresolved::located("UnityEngine.Light".into(), at("avatar.lua", 12)));
+    let layer_control = externals.component_types.intern(Unresolved::located(
+        "VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl".into(),
+        at("avatar.lua", 20),
+    ));
     let material = externals.assets.intern(Unresolved::located(
         AssetLocator::Named {
             asset_type: "UnityEngine.Material".into(),
@@ -107,6 +112,7 @@ fn externals() -> (Externals, Refs) {
             body,
             hat,
             light,
+            layer_control,
             material,
             clip,
             mask,
@@ -394,7 +400,7 @@ fn trees(refs: &Refs) -> Motion {
     }))
 }
 
-fn behaviors() -> Vec<Behavior> {
+fn behaviors(refs: &Refs) -> Vec<Behavior> {
     let drive = |target| Behavior::ParameterDrive(ParameterDrive { target });
     vec![
         drive(ParameterDriveTarget::Set {
@@ -435,7 +441,7 @@ fn behaviors() -> Vec<Behavior> {
             ]),
         }),
         Behavior::Generic(GenericStateBehavior {
-            type_name: "VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl".into(),
+            type_name: refs.layer_control,
             fields: BTreeMap::from([
                 ("blendDuration".to_string(), GenericValue::Float(0.5)),
                 ("debugString".to_string(), GenericValue::String(String::new())),
@@ -490,7 +496,7 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
                     false,
                     vec![],
                 ),
-                state("smile", Some(every_value_kind(refs)), Playback::default(), false, behaviors()),
+                state("smile", Some(every_value_kind(refs)), Playback::default(), false, behaviors(refs)),
             ],
             transitions: vec![
                 AnimatorTransition {
