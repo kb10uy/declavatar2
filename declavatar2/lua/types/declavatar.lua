@@ -351,18 +351,19 @@ function Renderer:enabled(enabled) end
 ---@return da.Target
 function Renderer:material(slot, asset) end
 
---- Material property such as `_Color`. A serialized field of the renderer itself
---- is written through `da.component(path, "UnityEngine.SkinnedMeshRenderer"):property(...)`.
+--- Material property such as `_Color`. Object references such as textures cannot be
+--- animated on a material property; swap the whole material with `:material` instead.
 ---@param name string
 ---@param value da.Value
 ---@return da.Target
 function Renderer:property(name, value) end
 
---- Material property that holds an object reference, such as a texture.
+--- Serialized field of the renderer itself, such as `m_UpdateWhenOffscreen`.
+--- Its type follows the value written for it, and `da.asset.*` writes an object reference.
 ---@param name string
----@param asset da.Asset
+---@param value da.Value|da.Asset
 ---@return da.Target
-function Renderer:reference(name, asset) end
+function Renderer:serialized(name, value) end
 
 --- GameObject bound to a path, from which targets are built.
 ---@class da.Object

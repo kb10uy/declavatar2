@@ -81,12 +81,13 @@ Lua script
 #### Animated Targets
 
 - Targets come from bound objects instead of a layer-level default mesh:
-    - `da.renderer(path[, type])` with `:shape(name[, value])`, `:material(slot, asset)`, `:property(name, value)`, `:reference(name, asset)`, `:enabled([bool])`.
+    - `da.renderer(path[, type])` with `:shape(name[, value])`, `:material(slot, asset)`, `:property(name, value)`, `:serialized(name, value)`, `:enabled([bool])`.
     - `da.object(path)` with `:active([bool])`, `:position(v)`, `:rotation(v)`, `:scale(v)`.
     - `da.component(path, type)` with `:enabled([bool])`, `:property(name, value)`, `:reference(name, asset)`.
     - `da.animator_parameter(name, value)` for AAPs; the referenced animator parameter must exist and have float type.
-- `:property` on a renderer writes a material property (`_Color` and such). A serialized field of the renderer itself is written through `da.component(path, "UnityEngine.SkinnedMeshRenderer"):property(...)`, which is the same path any other component takes.
-- `:reference` writes an object reference field and requires an explicit `da.asset.guid(...)`, `da.asset.path(...)` or `da.asset.named(type, name)` locator. A bare string is rejected because the asset type cannot be inferred.
+- `:property` on a renderer writes a material property (`_Color` and such). `:serialized` writes a serialized field of the renderer itself (`AnimatedRendererProperty::Serialized`).
+- A renderer has no `:reference`. Unity cannot animate an object reference held by a material property, so a texture swap would compile to a clip that does nothing; swapping the whole material with `:material` covers that need.
+- `Component:reference` writes an object reference field and requires an explicit `da.asset.guid(...)`, `da.asset.path(...)` or `da.asset.named(type, name)` locator. A bare string is rejected because the asset type cannot be inferred. `Renderer:serialized` takes such a locator in place of a value for the same purpose.
 - The value type of `:property` follows the Lua value: boolean is `Bool`, integer is `Int`, other numbers are `Float`, a vector is `Vector2`/`Vector3`/`Vector4`, `da.color` is `Color` and `da.quat` is `Quaternion`.
 - An omitted value means "full" (`1.0` / `true`); the consuming layer decides what "off" means.
 - A string given to `:material` is `AssetLocator::Named` with the type `UnityEngine.Material`. `da.asset.guid(...)`, `da.asset.path(...)`, `da.asset.named(type, name)` give explicit locators, and `da.asset.named` always takes the type. There is no assets block; `Externals` collects every reference.

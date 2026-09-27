@@ -43,7 +43,7 @@ impl VectorValue {
 
 /// Reads the value written for an animated property.
 ///
-/// Object references do not come through here; they are written with `:material` and `:reference`.
+/// Object references do not come through here; the builders that take one read `da.asset.*` themselves.
 pub fn animated_value<R>(owner: &'static str, value: &Value) -> LuaResult<AnimatedValue<R>> {
     match value {
         Value::Boolean(written) => Ok(AnimatedValue::Bool(*written)),
