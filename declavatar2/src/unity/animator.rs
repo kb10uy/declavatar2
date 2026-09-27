@@ -320,6 +320,7 @@ mod tests {
         type ObjectPath = &'static str;
         type ComponentType = &'static str;
         type ObjectRef = ();
+        type LayerRef = ();
     }
 
     #[rstest]

@@ -16,8 +16,8 @@ use crate::{
     EvaluateOptions,
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Behavior, BlendTree, Clip, DirectBlendTree, DirectField,
-        MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
-        TransitionTarget,
+        LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
+        TransitionSource, TransitionTarget,
     },
     compile,
     core::{
@@ -41,7 +41,10 @@ use crate::{
     vrchat::{
         expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
         playable_layer::PlayableLayer,
-        state_behaviour::{ParameterDrive, ParameterDriveTarget, TrackingControl, TrackingControlMode, TrackingControlTarget},
+        state_behaviour::{
+            ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio,
+            PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
+        },
     },
 };
 
@@ -563,7 +566,87 @@ enum_cases! {
         parameter_drive: Behavior::ParameterDrive(_) => Behavior::ParameterDrive(ParameterDrive { target: ParameterDriveTarget::Set { parameter: param("Int"), value: AnimatedValue::Int(1) } }),
         tracking_control: Behavior::TrackingControl(_) => Behavior::TrackingControl(TrackingControl { values: HashMap::from([(TrackingControlTarget::Head, TrackingControlMode::Animation), (TrackingControlTarget::Mouth, TrackingControlMode::Tracking)]) }),
         generic: Behavior::Generic(_) => Behavior::Generic(GenericStateBehavior { type_name: component_ref(1), fields: BTreeMap::from([("goalWeight".to_string(), GenericValue::Float(1.0))]) }),
+        layer_control: Behavior::LayerControl(_) => Behavior::LayerControl(LayerControl { layer: LayerRef { controller: 1, layer: 2 }, goal_weight: 0.5, blend_duration: 0.25 }),
+        locomotion_control: Behavior::LocomotionControl(_) => Behavior::LocomotionControl(LocomotionControl { disable_locomotion: true }),
+        temporary_pose_space: Behavior::TemporaryPoseSpace(_) => Behavior::TemporaryPoseSpace(TemporaryPoseSpace { enter: true, fixed_delay: false, delay: 0.5 }),
+        playable_layer_control: Behavior::PlayableLayerControl(_) => Behavior::PlayableLayerControl(PlayableLayerControl { playable: BlendablePlayable::Action, goal_weight: 1.0, blend_duration: 0.5 }),
+        play_audio: Behavior::PlayAudio(_) => Behavior::PlayAudio(audio_fixture(PlaybackOrder::Parameter(param("Int")))),
     }
+}
+
+fn audio_fixture(order: PlaybackOrder<Compiled>) -> PlayAudio<Compiled> {
+    PlayAudio {
+        source: Some(object(2)),
+        order,
+        clips: AudioSetting {
+            value: vec![asset(0), asset(3)],
+            apply: ApplySettings::Always,
+        },
+        volume: AudioSetting {
+            value: [0.25, 0.75],
+            apply: ApplySettings::IfStopped,
+        },
+        pitch: AudioSetting {
+            value: [-1.5, 2.0],
+            apply: ApplySettings::Never,
+        },
+        looping: AudioSetting {
+            value: true,
+            apply: ApplySettings::Always,
+        },
+        delay: 1.5,
+        play_on_enter: true,
+        stop_on_enter: false,
+        play_on_exit: true,
+        stop_on_exit: false,
+    }
+}
+
+enum_cases! {
+    fn blendable_playables(value: BlendablePlayable) {
+        round_trip(value);
+    }
+    cases {
+        action: BlendablePlayable::Action => BlendablePlayable::Action,
+        fx: BlendablePlayable::Fx => BlendablePlayable::Fx,
+        gesture: BlendablePlayable::Gesture => BlendablePlayable::Gesture,
+        additive: BlendablePlayable::Additive => BlendablePlayable::Additive,
+    }
+}
+
+enum_cases! {
+    fn playback_orders(value: PlaybackOrder<Compiled>) {
+        round_trip(value);
+    }
+    cases {
+        random: PlaybackOrder::Random => PlaybackOrder::Random,
+        unique_random: PlaybackOrder::UniqueRandom => PlaybackOrder::UniqueRandom,
+        roundabout: PlaybackOrder::Roundabout => PlaybackOrder::Roundabout,
+        parameter: PlaybackOrder::Parameter(_) => PlaybackOrder::Parameter(param("Int")),
+    }
+}
+
+enum_cases! {
+    fn apply_settings(value: ApplySettings) {
+        round_trip(value);
+    }
+    cases {
+        always: ApplySettings::Always => ApplySettings::Always,
+        if_stopped: ApplySettings::IfStopped => ApplySettings::IfStopped,
+        never: ApplySettings::Never => ApplySettings::Never,
+    }
+}
+
+#[rstest]
+fn a_play_audio_without_a_source_plays_on_the_root() {
+    round_trip(PlayAudio {
+        source: None,
+        clips: AudioSetting {
+            value: vec![],
+            apply: ApplySettings::IfStopped,
+        },
+        ..audio_fixture(PlaybackOrder::Random)
+    });
 }
 
 enum_cases! {
@@ -756,6 +839,11 @@ fn duplicate_controller_parameters() -> Vec<u8> {
 #[case::duplicate_parameters(duplicate_controller_parameters(), decode::<PlayableController>, DecodeError::Duplicate { what: "animator parameter", key: "`Twice`".into() })]
 #[case::invalid_tracking_mode(vec![0, 0, 3, 0, 0, 0, 0, 0, 0, 0], decode::<TrackingControl>, DecodeError::InvalidDiscriminator { type_name: "TrackingControlMode", value: 3 })]
 #[case::truncated_tracking(vec![0; 9], decode::<TrackingControl>, DecodeError::UnexpectedEnd { offset: 9, needed: 1, remaining: 0 })]
+#[case::unknown_blendable_playable(vec![4], decode::<BlendablePlayable>, DecodeError::InvalidDiscriminator { type_name: "BlendablePlayable", value: 4 })]
+#[case::unknown_apply_settings(vec![3], decode::<ApplySettings>, DecodeError::InvalidDiscriminator { type_name: "ApplySettings", value: 3 })]
+#[case::unknown_playback_order(vec![4], decode::<PlaybackOrder<Compiled>>, DecodeError::InvalidDiscriminator { type_name: "PlaybackOrder", value: 4 })]
+#[case::audio_source_out_of_range(encode(&PlayAudio { source: Some(object(4)), ..audio_fixture(PlaybackOrder::Random) }), decode::<PlayAudio<Compiled>>, DecodeError::ExternOutOfRange { kind: "object path", index: 4, len: 4 })]
+#[case::audio_clip_out_of_range(encode(&PlayAudio { clips: AudioSetting { value: vec![asset(4)], apply: ApplySettings::Always }, ..audio_fixture(PlaybackOrder::Random) }), decode::<PlayAudio<Compiled>>, DecodeError::ExternOutOfRange { kind: "asset", index: 4, len: 4 })]
 fn malformed_values_are_rejected<T: Decode + Debug>(
     #[case] bytes: Vec<u8>,
     #[case] decode: fn(&[u8]) -> Result<T, DecodeError>,
@@ -933,6 +1021,88 @@ fn an_empty_avatar_is_a_header_and_four_empty_tables_and_lists() {
         DecodeError::UnexpectedKind {
             expected: BlobKind::Diagnostics,
             found: BlobKind::Avatar
+        }
+    );
+}
+
+fn controlling(playable: PlayableLayer, layer: LayerRef) -> PlayableController {
+    let mut control = state("Control", None);
+    control.behaviors.push(Behavior::LayerControl(LayerControl {
+        layer,
+        goal_weight: 1.0,
+        blend_duration: 0.0,
+    }));
+    let layer = AnimatorLayer {
+        name: "Control".into(),
+        default_state: Some(0),
+        states: vec![control],
+        transitions: vec![],
+    };
+    controller(playable, vec![], vec![layer])
+}
+
+fn layer_named(name: &str) -> AnimatorLayer {
+    AnimatorLayer {
+        name: name.into(),
+        default_state: None,
+        states: vec![],
+        transitions: vec![],
+    }
+}
+
+#[rstest]
+#[case::own_layer(vec![controlling(PlayableLayer::Fx, LayerRef { controller: 0, layer: 0 })])]
+#[case::same_playable(vec![
+    controlling(PlayableLayer::Gesture, LayerRef { controller: 1, layer: 1 }),
+    controller(PlayableLayer::Gesture, vec![], vec![layer_named("A"), layer_named("B")]),
+])]
+fn a_layer_control_may_reach_any_controller_of_its_playable(#[case] controllers: Vec<PlayableController>) {
+    let avatar = Avatar {
+        controllers,
+        ..Avatar::default()
+    };
+    assert_eq!(decode_avatar(&encode_avatar(&avatar).unwrap()).unwrap(), avatar);
+}
+
+#[rstest]
+#[case::controller_out_of_range(
+    vec![controlling(PlayableLayer::Fx, LayerRef { controller: 1, layer: 0 })],
+    DecodeError::ControllerOutOfRange { index: 1, len: 1 },
+)]
+#[case::layer_out_of_range(
+    vec![controlling(PlayableLayer::Fx, LayerRef { controller: 0, layer: 1 })],
+    DecodeError::LayerOutOfRange { controller: 0, index: 1, len: 1 },
+)]
+#[case::another_playable(
+    vec![controlling(PlayableLayer::Fx, LayerRef { controller: 1, layer: 0 }), controller(PlayableLayer::Action, vec![], vec![layer_named("A")])],
+    DecodeError::LayerInAnotherPlayable { controller: 1, expected: PlayableLayer::Fx, found: PlayableLayer::Action },
+)]
+#[case::uncontrollable(
+    vec![controlling(PlayableLayer::Base, LayerRef { controller: 0, layer: 0 })],
+    DecodeError::UncontrollablePlayable(PlayableLayer::Base),
+)]
+fn a_layer_control_outside_its_playable_is_rejected(#[case] controllers: Vec<PlayableController>, #[case] expected: DecodeError) {
+    let avatar = Avatar {
+        controllers,
+        ..Avatar::default()
+    };
+    assert_eq!(decode_avatar(&encode_avatar(&avatar).unwrap()).unwrap_err(), expected);
+}
+
+#[rstest]
+fn layer_indices_beyond_u32_are_encode_errors() {
+    let mut writer = Writer::new();
+    let error = LayerRef {
+        controller: 0,
+        layer: u32::MAX as usize + 1,
+    }
+    .encode(&mut writer)
+    .unwrap_err();
+    assert_eq!(
+        error,
+        EncodeError::Overflow {
+            what: "layer index",
+            value: u32::MAX as usize + 1,
         }
     );
 }

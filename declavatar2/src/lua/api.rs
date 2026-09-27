@@ -120,7 +120,7 @@ mod definition_tests {
     use crate::lua::{
         EvaluateOptions,
         api::{
-            behavior::{TRACKING_MODES, TRACKING_TARGETS},
+            behavior::{AUDIO_APPLY, BLENDABLE_PLAYABLES, PLAYBACK_ORDERS, POSE_SPACES, TRACKING_MODES, TRACKING_TARGETS},
             controller::{MERGE_MODES, PATH_MODES, PLAYABLE_LAYERS},
             parameter::{PROVIDED_GROUPS, SCOPES},
             raw::{DIRECT_TREE_TYPE, INTERPOLATIONS, PARAMETRIC_TREE_TYPES},
@@ -246,6 +246,10 @@ mod definition_tests {
         assert_eq!(documented_alias(DECLAVATAR, "da.ProvidedGroup"), accepted(PROVIDED_GROUPS));
         assert_eq!(documented_alias(DECLAVATAR, "da.TrackingMode"), accepted(TRACKING_MODES));
         assert_eq!(documented_alias(DECLAVATAR, "da.TrackingTarget"), accepted(TRACKING_TARGETS));
+        assert_eq!(documented_alias(DECLAVATAR, "da.BlendablePlayable"), accepted(BLENDABLE_PLAYABLES));
+        assert_eq!(documented_alias(DECLAVATAR, "da.PoseSpace"), accepted(POSE_SPACES));
+        assert_eq!(documented_alias(DECLAVATAR, "da.PlaybackOrder"), accepted(PLAYBACK_ORDERS));
+        assert_eq!(documented_alias(DECLAVATAR, "da.AudioApply"), accepted(AUDIO_APPLY));
         assert_eq!(documented_alias(DECLAVATAR, "da.PlayableLayer"), accepted(PLAYABLE_LAYERS));
         assert_eq!(documented_alias(DECLAVATAR, "da.MergeMode"), accepted(MERGE_MODES));
         assert_eq!(documented_alias(DECLAVATAR, "da.PathMode"), accepted(PATH_MODES));

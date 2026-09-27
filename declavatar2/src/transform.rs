@@ -27,7 +27,8 @@ pub fn transform(declaration: &decl::Avatar) -> Result<Avatar, TransformErrors> 
     let (mut context, mut errors) = Context::collect(declaration);
 
     let mut compiled = Vec::new();
-    for controller in &declaration.controllers {
+    for (index, controller) in declaration.controllers.iter().enumerate() {
+        context.current_controller = Some(index);
         let mut layers = Vec::new();
         for layer in &controller.layers {
             match layer::compile(&mut context, layer) {
@@ -38,6 +39,7 @@ pub fn transform(declaration: &decl::Avatar) -> Result<Avatar, TransformErrors> 
         let mask = controller.mask.as_ref().map(|mask| context.externals.assets.intern(mask.clone()));
         compiled.push((controller, mask, layers));
     }
+    context.current_controller = None;
     let menu = menu::compile(&context, &declaration.menu, &mut errors);
 
     if !errors.is_empty() {

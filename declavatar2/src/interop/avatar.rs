@@ -12,7 +12,7 @@ use super::{
 use crate::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, MenuAxis, MenuDirection, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
+        DirectField, LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
         TransitionTarget,
     },
     core::{
@@ -35,7 +35,10 @@ use crate::{
     vrchat::{
         expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
         playable_layer::PlayableLayer,
-        state_behaviour::{ParameterDrive, ParameterDriveTarget, TrackingControl, TrackingControlMode, TrackingControlTarget},
+        state_behaviour::{
+            ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio,
+            PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
+        },
     },
 };
 
@@ -258,6 +261,7 @@ impl Decode for Avatar {
         }
         reader.context_mut().parameters = scope;
         let menu = reader.decode()?;
+        check_layer_controls(&controllers)?;
 
         Ok(Self {
             expression_parameters,
@@ -266,6 +270,47 @@ impl Decode for Avatar {
             externals,
         })
     }
+}
+
+/// Checks every `LayerControl` against the controllers, which are only all known once the list has been read.
+fn check_layer_controls(controllers: &[PlayableController]) -> Result<(), DecodeError> {
+    let behaviors = controllers.iter().enumerate().flat_map(|(index, controller)| {
+        controller
+            .controller
+            .layers
+            .iter()
+            .flat_map(|layer| &layer.states)
+            .flat_map(|state| &state.behaviors)
+            .map(move |behavior| (index, behavior))
+    });
+    for (index, behavior) in behaviors {
+        let Behavior::LayerControl(control) = behavior else {
+            continue;
+        };
+        let playable = controllers[index].playable;
+        if BlendablePlayable::of(playable).is_none() {
+            return Err(DecodeError::UncontrollablePlayable(playable));
+        }
+        let LayerRef { controller, layer } = control.layer;
+        let Some(target) = controllers.get(controller) else {
+            return Err(DecodeError::ControllerOutOfRange {
+                index: controller,
+                len: controllers.len(),
+            });
+        };
+        if target.playable != playable {
+            return Err(DecodeError::LayerInAnotherPlayable {
+                controller,
+                expected: playable,
+                found: target.playable,
+            });
+        }
+        let len = target.controller.layers.len();
+        if layer >= len {
+            return Err(DecodeError::LayerOutOfRange { controller, index: layer, len });
+        }
+    }
+    Ok(())
 }
 
 wire_struct! {
@@ -765,6 +810,11 @@ wire_enum! {
         0 ParameterDrive(drive),
         1 TrackingControl(control),
         2 Generic(behavior),
+        3 LayerControl(control),
+        4 LocomotionControl(control),
+        5 TemporaryPoseSpace(control),
+        6 PlayableLayerControl(control),
+        7 PlayAudio(audio),
     }
 
     ParameterDriveTarget<Compiled> {
@@ -796,6 +846,65 @@ wire_enum! {
 wire_struct! {
     ParameterDrive<Compiled> { target }
     GenericStateBehavior<Compiled> { type_name, fields }
+    LayerControl<Compiled> { layer, goal_weight, blend_duration }
+    LocomotionControl { disable_locomotion }
+    TemporaryPoseSpace { enter, fixed_delay, delay }
+    PlayableLayerControl { playable, goal_weight, blend_duration }
+    PlayAudio<Compiled> { source, order, clips, volume, pitch, looping, delay, play_on_enter, stop_on_enter, play_on_exit, stop_on_exit }
+}
+
+wire_enum! {
+    BlendablePlayable {
+        0 Action,
+        1 Fx,
+        2 Gesture,
+        3 Additive,
+    }
+
+    PlaybackOrder<Compiled> {
+        0 Random,
+        1 UniqueRandom,
+        2 Roundabout,
+        3 Parameter(parameter),
+    }
+
+    ApplySettings {
+        0 Always,
+        1 IfStopped,
+        2 Never,
+    }
+}
+
+impl Encode for LayerRef {
+    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
+        writer.length("controller index", self.controller)?;
+        writer.length("layer index", self.layer)
+    }
+}
+
+impl Decode for LayerRef {
+    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            controller: reader.length("controller index")?,
+            layer: reader.length("layer index")?,
+        })
+    }
+}
+
+impl<T: Encode> Encode for AudioSetting<T> {
+    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
+        self.value.encode(writer)?;
+        self.apply.encode(writer)
+    }
+}
+
+impl<T: Decode> Decode for AudioSetting<T> {
+    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            value: reader.decode()?,
+            apply: reader.decode()?,
+        })
+    }
 }
 
 /// The wire order of tracking control targets, one byte each.

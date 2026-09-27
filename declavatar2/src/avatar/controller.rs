@@ -15,6 +15,13 @@ use crate::{
 /// Reference to an animator parameter whose existence and type have been checked.
 pub type ParameterRef = <Compiled as Phase>::ParameterRef;
 
+/// Position of a compiled layer: an index into `Avatar::controllers`, then into the layers of that controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LayerRef {
+    pub controller: usize,
+    pub layer: usize,
+}
+
 /// A compiled controller together with how the client applies it to a playable layer.
 ///
 /// Object paths inside the controller are read against the avatar root or, with `PathMode::Relative`,

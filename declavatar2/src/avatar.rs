@@ -6,7 +6,7 @@ use crate::{unity::external::Externals, vrchat::expr_parameter::ExpressionParame
 
 pub use behavior::Behavior;
 pub use controller::{
-    AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, BlendTree, Clip, DirectBlendTree, DirectField, Motion,
+    AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, BlendTree, Clip, DirectBlendTree, DirectField, LayerRef, Motion,
     ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource, TransitionTarget,
 };
 pub use menu::{MenuAxis, MenuDirection, MenuItem};

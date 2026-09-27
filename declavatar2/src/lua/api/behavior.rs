@@ -1,23 +1,59 @@
 use std::collections::{BTreeMap, HashMap};
 
-use mlua::{Error as LuaError, Lua, Result as LuaResult, Table, Value};
+use mlua::{Error as LuaError, Lua, Result as LuaResult, Table, Value, Variadic};
 
 use crate::{
     core::{phase::Declared, resolution::Unresolved},
     decl::behavior::{Behavior, Drive},
     lua::{
+        api::target::AssetArgument,
         list,
         location::caller_location,
         node,
-        options::{Options, one_of},
+        options::{Options, one_of, with_children},
         value::{StrictBoolean, animated_value},
     },
     unity::{
         state::{GenericStateBehavior, GenericValue},
         value::AnimatedValue,
     },
-    vrchat::state_behaviour::{ParameterDriveTarget, TrackingControl, TrackingControlMode, TrackingControlTarget},
+    vrchat::state_behaviour::{
+        ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDriveTarget, PlayAudio, PlayableLayerControl, PlaybackOrder,
+        TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
+    },
 };
+
+pub(crate) const AUDIO_CLIP_TYPE: &str = "UnityEngine.AudioClip";
+
+pub(crate) const BLENDABLE_PLAYABLES: &[(&str, BlendablePlayable)] = &[
+    ("additive", BlendablePlayable::Additive),
+    ("gesture", BlendablePlayable::Gesture),
+    ("action", BlendablePlayable::Action),
+    ("fx", BlendablePlayable::Fx),
+];
+
+pub(crate) const POSE_SPACES: &[(&str, bool)] = &[("enter", true), ("exit", false)];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OrderName {
+    Random,
+    UniqueRandom,
+    Roundabout,
+    Parameter,
+}
+
+pub(crate) const PLAYBACK_ORDERS: &[(&str, OrderName)] = &[
+    ("random", OrderName::Random),
+    ("unique_random", OrderName::UniqueRandom),
+    ("roundabout", OrderName::Roundabout),
+    ("parameter", OrderName::Parameter),
+];
+
+pub(crate) const AUDIO_APPLY: &[(&str, ApplySettings)] = &[
+    ("always", ApplySettings::Always),
+    ("if_stopped", ApplySettings::IfStopped),
+    ("never", ApplySettings::Never),
+];
 
 pub(crate) const TRACKING_MODES: &[(&str, TrackingControlMode)] = &[("tracking", TrackingControlMode::Tracking), ("animation", TrackingControlMode::Animation)];
 
@@ -48,6 +84,11 @@ pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
     da.set("drive_copy", lua.create_function(drive_copy)?)?;
     da.set("tracking", lua.create_function(tracking)?)?;
     da.set("behavior", lua.create_function(behavior)?)?;
+    da.set("layer_control", lua.create_function(layer_control)?)?;
+    da.set("playable_control", lua.create_function(playable_control)?)?;
+    da.set("locomotion", lua.create_function(locomotion)?)?;
+    da.set("pose_space", lua.create_function(pose_space)?)?;
+    da.set("play_audio", lua.create_function(play_audio)?)?;
     Ok(())
 }
 
@@ -211,6 +252,162 @@ fn behavior(lua: &Lua, (type_name, fields): (String, Option<Table>)) -> LuaResul
     })))
 }
 
+fn layer_control(lua: &Lua, (layer, table): (String, Option<Table>)) -> LuaResult<node::Behavior> {
+    let (goal_weight, blend_duration) = weight_options("da.layer_control", table)?;
+    Ok(node::Behavior(Behavior::LayerControl(LayerControl {
+        layer: located(lua, layer),
+        goal_weight,
+        blend_duration,
+    })))
+}
+
+fn playable_control(_: &Lua, (playable, table): (String, Option<Table>)) -> LuaResult<node::Behavior> {
+    const OWNER: &str = "da.playable_control";
+
+    let playable = one_of(OWNER, "playable layer", &playable, BLENDABLE_PLAYABLES)?;
+    let (goal_weight, blend_duration) = weight_options(OWNER, table)?;
+    Ok(node::Behavior(Behavior::PlayableLayerControl(PlayableLayerControl {
+        playable,
+        goal_weight,
+        blend_duration,
+    })))
+}
+
+/// Reads `goal_weight`, full by default, and `blend_duration`, instant by default.
+fn weight_options(owner: &'static str, table: Option<Table>) -> LuaResult<(f64, f64)> {
+    let mut options = Options::new(owner, table);
+    let goal_weight = options.take::<f64>("goal_weight")?.unwrap_or(1.0);
+    let blend_duration = options.take::<f64>("blend_duration")?.unwrap_or(0.0);
+    options.finish()?;
+
+    within(owner, "goal_weight", goal_weight, 0.0, 1.0)?;
+    seconds(owner, "blend_duration", blend_duration)?;
+    Ok((goal_weight, blend_duration))
+}
+
+fn locomotion(_: &Lua, enabled: StrictBoolean) -> LuaResult<node::Behavior> {
+    Ok(node::Behavior(Behavior::LocomotionControl(LocomotionControl {
+        disable_locomotion: !enabled.0,
+    })))
+}
+
+fn pose_space(_: &Lua, (mode, table): (String, Option<Table>)) -> LuaResult<node::Behavior> {
+    const OWNER: &str = "da.pose_space";
+
+    let enter = one_of(OWNER, "pose space", &mode, POSE_SPACES)?;
+    let mut options = Options::new(OWNER, table);
+    let delay = options.take::<f64>("delay")?.unwrap_or(0.0);
+    let fixed_delay = options.take::<StrictBoolean>("fixed_delay")?.is_none_or(|value| value.0);
+    options.finish()?;
+
+    seconds(OWNER, "delay", delay)?;
+    Ok(node::Behavior(Behavior::TemporaryPoseSpace(TemporaryPoseSpace { enter, fixed_delay, delay })))
+}
+
+fn play_audio(lua: &Lua, (source, arguments): (String, Variadic<Value>)) -> LuaResult<node::Behavior> {
+    const OWNER: &str = "da.play_audio";
+
+    let (table, clips) = with_children(lua, OWNER, arguments)?;
+    let mut options = Options::new(OWNER, table);
+    let order = options.take::<String>("order")?;
+    let parameter = options.take::<String>("parameter")?;
+    let volume = options.take::<Value>("volume")?.map(|value| range(OWNER, "volume", &value)).transpose()?;
+    let pitch = options.take::<Value>("pitch")?.map(|value| range(OWNER, "pitch", &value)).transpose()?;
+    let looping = options.take::<StrictBoolean>("loop")?.is_some_and(|value| value.0);
+    let delay = options.take::<f64>("delay")?.unwrap_or(0.0);
+    let play_on_enter = options.take::<StrictBoolean>("play_on_enter")?.is_none_or(|value| value.0);
+    let stop_on_enter = options.take::<StrictBoolean>("stop_on_enter")?.is_none_or(|value| value.0);
+    let play_on_exit = options.take::<StrictBoolean>("play_on_exit")?.is_some_and(|value| value.0);
+    let stop_on_exit = options.take::<StrictBoolean>("stop_on_exit")?.is_some_and(|value| value.0);
+    let clips_apply = apply_option(&mut options, OWNER, "clips_apply")?;
+    let volume_apply = apply_option(&mut options, OWNER, "volume_apply")?;
+    let pitch_apply = apply_option(&mut options, OWNER, "pitch_apply")?;
+    let loop_apply = apply_option(&mut options, OWNER, "loop_apply")?;
+    options.finish()?;
+
+    let order = order.map(|order| one_of(OWNER, "order", &order, PLAYBACK_ORDERS)).transpose()?;
+    let order = match (order, parameter) {
+        (None | Some(OrderName::Random), None) => PlaybackOrder::Random,
+        (Some(OrderName::UniqueRandom), None) => PlaybackOrder::UniqueRandom,
+        (Some(OrderName::Roundabout), None) => PlaybackOrder::Roundabout,
+        (None | Some(OrderName::Parameter), Some(parameter)) => PlaybackOrder::Parameter(located(lua, parameter)),
+        (Some(OrderName::Parameter), None) => {
+            return Err(LuaError::runtime(format!(
+                "{OWNER}: order `parameter` plays the clip at the index an int parameter holds, so `parameter` names it"
+            )));
+        }
+        (Some(_), Some(_)) => {
+            return Err(LuaError::runtime(format!("{OWNER}: `parameter` is only read by order `parameter`")));
+        }
+    };
+
+    let volume = ordered(OWNER, volume.unwrap_or([1.0, 1.0]))?;
+    let pitch = ordered(OWNER, pitch.unwrap_or([1.0, 1.0]))?;
+    for value in volume {
+        within(OWNER, "volume", value, 0.0, 1.0)?;
+    }
+    for value in pitch {
+        within(OWNER, "pitch", value, -3.0, 3.0)?;
+    }
+    within(OWNER, "delay", delay, 0.0, 60.0)?;
+
+    let clips = list::collect::<AssetArgument>(lua, OWNER, &clips)?
+        .into_iter()
+        .map(|clip| clip.into_reference(lua, AUDIO_CLIP_TYPE))
+        .collect();
+
+    Ok(node::Behavior(Behavior::PlayAudio(PlayAudio {
+        source: (!source.is_empty()).then(|| located(lua, source)),
+        order,
+        clips: AudioSetting {
+            value: clips,
+            apply: clips_apply,
+        },
+        volume: AudioSetting {
+            value: volume,
+            apply: volume_apply,
+        },
+        pitch: AudioSetting {
+            value: pitch,
+            apply: pitch_apply,
+        },
+        looping: AudioSetting {
+            value: looping,
+            apply: loop_apply,
+        },
+        delay,
+        play_on_enter,
+        stop_on_enter,
+        play_on_exit,
+        stop_on_exit,
+    })))
+}
+
+fn apply_option(options: &mut Options, owner: &'static str, key: &'static str) -> LuaResult<ApplySettings> {
+    match options.take::<String>(key)? {
+        Some(written) => one_of(owner, key, &written, AUDIO_APPLY),
+        None => Ok(ApplySettings::IfStopped),
+    }
+}
+
+fn within(owner: &'static str, key: &str, value: f64, min: f64, max: f64) -> LuaResult<()> {
+    if !(min..=max).contains(&value) {
+        return Err(LuaError::runtime(format!(
+            "{owner}: `{key}` is between {min} and {max}, but {value} was written"
+        )));
+    }
+    Ok(())
+}
+
+fn seconds(owner: &'static str, key: &str, value: f64) -> LuaResult<()> {
+    if !(value >= 0.0 && value.is_finite()) {
+        return Err(LuaError::runtime(format!(
+            "{owner}: `{key}` is a number of seconds from 0, but {value} was written"
+        )));
+    }
+    Ok(())
+}
+
 /// Reads one value of a generic behavior, where `path` names it in error messages.
 fn generic_value(owner: &'static str, path: &str, value: &Value) -> LuaResult<GenericValue> {
     match value {
@@ -312,6 +509,7 @@ mod tests {
     use crate::{
         core::resolution::SourceLocation,
         lua::testing::{eval, eval_error},
+        unity::external::AssetLocator,
     };
 
     fn drive_of(expression: &str) -> Drive {
@@ -545,6 +743,188 @@ mod tests {
     fn a_generic_behavior_rejects_what_it_cannot_carry(#[case] expression: &str, #[case] expected: &str) {
         let message = eval_error(expression);
         assert!(message.contains(expected), "{message}");
+    }
+
+    #[rstest]
+    #[case::defaults("da.layer_control('Hat')", 1.0, 0.0)]
+    #[case::written("da.layer_control('Hat', { goal_weight = 0, blend_duration = 0.5 })", 0.0, 0.5)]
+    fn a_layer_control_names_its_layer(#[case] expression: &str, #[case] goal_weight: f64, #[case] blend_duration: f64) {
+        let Behavior::LayerControl(control) = behavior_of(expression) else {
+            panic!("expected a layer control");
+        };
+        assert_eq!(
+            control,
+            LayerControl {
+                layer: named("Hat"),
+                goal_weight,
+                blend_duration,
+            }
+        );
+        assert_eq!(
+            control.layer.at,
+            Some(SourceLocation {
+                chunk: "test.lua".into(),
+                line: 2,
+            })
+        );
+    }
+
+    #[rstest]
+    #[case::additive("additive", BlendablePlayable::Additive)]
+    #[case::gesture("gesture", BlendablePlayable::Gesture)]
+    #[case::action("action", BlendablePlayable::Action)]
+    #[case::fx("fx", BlendablePlayable::Fx)]
+    fn a_playable_control_names_a_blendable_playable_layer(#[case] written: &str, #[case] playable: BlendablePlayable) {
+        assert_eq!(
+            behavior_of(&format!("da.playable_control('{written}', {{ blend_duration = 1 }})")),
+            Behavior::PlayableLayerControl(PlayableLayerControl {
+                playable,
+                goal_weight: 1.0,
+                blend_duration: 1.0,
+            })
+        );
+    }
+
+    #[rstest]
+    #[case::weight_above("da.layer_control('Hat', { goal_weight = 1.5 })", "da.layer_control: `goal_weight` is between 0 and 1")]
+    #[case::weight_below("da.playable_control('fx', { goal_weight = -0.5 })", "da.playable_control: `goal_weight` is between 0 and 1")]
+    #[case::negative_duration("da.layer_control('Hat', { blend_duration = -1 })", "`blend_duration` is a number of seconds from 0")]
+    #[case::unknown_option("da.layer_control('Hat', { weight = 1 })", "unknown option `weight`")]
+    #[case::base_playable("da.playable_control('base')", "playable layer `base` is not known")]
+    #[case::locomotion_without_value("da.locomotion()", "expected a boolean, got nothing")]
+    #[case::unknown_pose_space("da.pose_space('in')", "da.pose_space: pose space `in` is not known")]
+    #[case::negative_delay("da.pose_space('enter', { delay = -1 })", "`delay` is a number of seconds from 0")]
+    fn a_bad_control_is_rejected_where_it_is_written(#[case] expression: &str, #[case] expected: &str) {
+        let message = eval_error(expression);
+        assert!(message.contains(expected), "{message}");
+    }
+
+    #[rstest]
+    #[case::off("da.locomotion(false)", true)]
+    #[case::on("da.locomotion(true)", false)]
+    fn locomotion_says_whether_it_is_enabled(#[case] expression: &str, #[case] disable_locomotion: bool) {
+        assert_eq!(behavior_of(expression), Behavior::LocomotionControl(LocomotionControl { disable_locomotion }));
+    }
+
+    #[rstest]
+    #[case::enter("da.pose_space('enter')", TemporaryPoseSpace { enter: true, fixed_delay: true, delay: 0.0 })]
+    #[case::exit_later("da.pose_space('exit', { delay = 0.5, fixed_delay = false })", TemporaryPoseSpace { enter: false, fixed_delay: false, delay: 0.5 })]
+    fn a_pose_space_enters_or_exits(#[case] expression: &str, #[case] expected: TemporaryPoseSpace) {
+        assert_eq!(behavior_of(expression), Behavior::TemporaryPoseSpace(expected));
+    }
+
+    fn audio_of(expression: &str) -> PlayAudio<Declared> {
+        match behavior_of(expression) {
+            Behavior::PlayAudio(audio) => audio,
+            other => panic!("expected an audio behavior, got {other:?}"),
+        }
+    }
+
+    fn clip(name: &str) -> Unresolved<AssetLocator> {
+        Unresolved::new(AssetLocator::Named {
+            asset_type: AUDIO_CLIP_TYPE.into(),
+            name: name.into(),
+        })
+    }
+
+    #[rstest]
+    fn play_audio_takes_the_defaults_of_the_component() {
+        assert_eq!(
+            audio_of("da.play_audio('Speaker', { 'Voice', da.asset.guid('abc') })"),
+            PlayAudio {
+                source: Some(named("Speaker")),
+                order: PlaybackOrder::Random,
+                clips: AudioSetting {
+                    value: vec![clip("Voice"), Unresolved::new(AssetLocator::Guid("abc".into()))],
+                    apply: ApplySettings::IfStopped,
+                },
+                volume: AudioSetting {
+                    value: [1.0, 1.0],
+                    apply: ApplySettings::IfStopped,
+                },
+                pitch: AudioSetting {
+                    value: [1.0, 1.0],
+                    apply: ApplySettings::IfStopped,
+                },
+                looping: AudioSetting {
+                    value: false,
+                    apply: ApplySettings::IfStopped,
+                },
+                delay: 0.0,
+                play_on_enter: true,
+                stop_on_enter: true,
+                play_on_exit: false,
+                stop_on_exit: false,
+            }
+        );
+    }
+
+    #[rstest]
+    fn play_audio_takes_every_written_option() {
+        assert_eq!(
+            audio_of(
+                "da.play_audio('', { order = 'roundabout', volume = { 0.25, 0.5 }, pitch = da.vec2(-3, 3), loop = true, delay = 60,                  play_on_enter = false, stop_on_enter = false, play_on_exit = true, stop_on_exit = true,                  clips_apply = 'always', volume_apply = 'never', pitch_apply = 'always', loop_apply = 'never' }, {})"
+            ),
+            PlayAudio {
+                source: None,
+                order: PlaybackOrder::Roundabout,
+                clips: AudioSetting {
+                    value: vec![],
+                    apply: ApplySettings::Always,
+                },
+                volume: AudioSetting {
+                    value: [0.25, 0.5],
+                    apply: ApplySettings::Never,
+                },
+                pitch: AudioSetting {
+                    value: [-3.0, 3.0],
+                    apply: ApplySettings::Always,
+                },
+                looping: AudioSetting {
+                    value: true,
+                    apply: ApplySettings::Never,
+                },
+                delay: 60.0,
+                play_on_enter: false,
+                stop_on_enter: false,
+                play_on_exit: true,
+                stop_on_exit: true,
+            }
+        );
+    }
+
+    #[rstest]
+    #[case::random("{ order = 'random' }", PlaybackOrder::Random)]
+    #[case::unique_random("{ order = 'unique_random' }", PlaybackOrder::UniqueRandom)]
+    #[case::roundabout("{ order = 'roundabout' }", PlaybackOrder::Roundabout)]
+    #[case::parameter("{ order = 'parameter', parameter = 'Voice' }", PlaybackOrder::Parameter(named("Voice")))]
+    #[case::implied_parameter("{ parameter = 'Voice' }", PlaybackOrder::Parameter(named("Voice")))]
+    fn play_audio_picks_clips_in_the_written_order(#[case] options: &str, #[case] expected: PlaybackOrder<Declared>) {
+        assert_eq!(audio_of(&format!("da.play_audio('Speaker', {options}, {{}})")).order, expected);
+    }
+
+    #[rstest]
+    #[case::parameter_without_name("{ order = 'parameter' }", "so `parameter` names it")]
+    #[case::name_without_parameter_order("{ order = 'random', parameter = 'Voice' }", "`parameter` is only read by order `parameter`")]
+    #[case::unknown_order("{ order = 'shuffle' }", "order `shuffle` is not known")]
+    #[case::loud("{ volume = { 0, 2 } }", "`volume` is between 0 and 1")]
+    #[case::backwards_volume("{ volume = { 1, 0 } }", "1 is greater than 0")]
+    #[case::high("{ pitch = { 1, 4 } }", "`pitch` is between -3 and 3")]
+    #[case::late("{ delay = 61 }", "`delay` is between 0 and 60")]
+    #[case::bad_apply("{ loop_apply = 'sometimes' }", "loop_apply `sometimes` is not known")]
+    #[case::not_a_range("{ pitch = 1 }", "option `pitch` is a range")]
+    fn bad_audio_options_are_rejected_where_they_are_written(#[case] options: &str, #[case] expected: &str) {
+        let message = eval_error(&format!("da.play_audio('Speaker', {options}, {{}})"));
+        assert!(message.contains(expected), "{message}");
+        assert!(message.contains("test.lua:2:"), "{message}");
+    }
+
+    #[rstest]
+    #[case::layer_control("da.button('X', da.layer_control('Hat'))")]
+    #[case::play_audio("da.button('X', da.play_audio('Speaker', {}))")]
+    fn a_control_behavior_cannot_trigger_a_menu_item(#[case] expression: &str) {
+        let message = eval_error(expression);
+        assert!(message.contains("expected drive, got behavior"), "{message}");
     }
 
     #[rstest]

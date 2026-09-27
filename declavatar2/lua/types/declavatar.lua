@@ -113,6 +113,18 @@ local da = {}
 --- Part of the body that tracking control acts on.
 ---@alias da.TrackingTarget "head"|"left_hand"|"right_hand"|"hip"|"left_foot"|"right_foot"|"left_fingers"|"right_fingers"|"eyes"|"mouth"
 
+--- Playable layer whose weight a state can blend.
+---@alias da.BlendablePlayable "additive"|"gesture"|"action"|"fx"
+
+--- Whether `da.pose_space` moves the viewpoint to the head or back.
+---@alias da.PoseSpace "enter"|"exit"
+
+--- Which clip `da.play_audio` plays next.
+---@alias da.PlaybackOrder "random"|"unique_random"|"roundabout"|"parameter"
+
+--- When a setting of `da.play_audio` is written to the AudioSource.
+---@alias da.AudioApply "always"|"if_stopped"|"never"
+
 --- How a blend tree blends its fields. A `direct` tree weights each field by its own parameter.
 ---@alias da.BlendTreeType "linear"|"simple_2d"|"freeform_2d"|"cartesian_2d"|"direct"
 
@@ -172,6 +184,7 @@ local da = {}
 ---@alias da.FieldList (da.Field|false)[]
 ---@alias da.WeightedFieldList (da.WeightedField|false)[]
 ---@alias da.TrackingTargetList (da.TrackingTarget|false)[]
+---@alias da.AudioClipList (da.AssetValue|false)[]
 
 --------------------------------------------------------------------------------
 -- Options tables
@@ -247,6 +260,30 @@ local da = {}
 ---@class da.CopyOptions
 ---@field from_range? da.Range
 ---@field to_range? da.Range
+
+---@class da.WeightOptions
+---@field goal_weight? number Between 0 and 1. Defaults to 1.
+---@field blend_duration? number Seconds the weight takes to reach the goal. Defaults to 0.
+
+---@class da.PoseSpaceOptions
+---@field delay? number Defaults to 0.
+---@field fixed_delay? boolean Whether `delay` is in seconds rather than a fraction of the state. Defaults to true.
+
+---@class da.PlayAudioOptions
+---@field order? da.PlaybackOrder Defaults to `"parameter"` when `parameter` is written and `"random"` otherwise.
+---@field parameter? string Int parameter holding the index of the clip to play, read by order `"parameter"`.
+---@field volume? da.Range Random range between 0 and 1. Defaults to `{ 1, 1 }`.
+---@field pitch? da.Range Random range between -3 and 3. Defaults to `{ 1, 1 }`.
+---@field loop? boolean Defaults to false.
+---@field delay? number Seconds between entering the state and playing, up to 60. Defaults to 0.
+---@field play_on_enter? boolean Defaults to true.
+---@field stop_on_enter? boolean Defaults to true.
+---@field play_on_exit? boolean Defaults to false.
+---@field stop_on_exit? boolean Defaults to false.
+---@field clips_apply? da.AudioApply Defaults to `"if_stopped"`.
+---@field volume_apply? da.AudioApply Defaults to `"if_stopped"`.
+---@field pitch_apply? da.AudioApply Defaults to `"if_stopped"`.
+---@field loop_apply? da.AudioApply Defaults to `"if_stopped"`.
 
 --- A parametric tree blends along `x`, and a two dimensional one along `y` as well.
 --- A `direct` tree has neither.
@@ -567,6 +604,45 @@ function da.tracking(mode, targets) end
 ---@param fields? table<string, da.GenericValue>
 ---@return da.Behavior
 function da.behavior(type_name, fields) end
+
+--- Blends the weight of a layer declared in this avatar.
+---
+--- The layer belongs to the same playable layer as the controller holding the state, which is
+--- action, fx, gesture or additive; it may sit in another controller of that playable layer.
+--- A child of `da.blend_layer` is merged into it and cannot be named on its own.
+---@param layer string
+---@param options? da.WeightOptions
+---@return da.Behavior
+function da.layer_control(layer, options) end
+
+--- Blends the weight of a whole playable layer.
+---@param playable da.BlendablePlayable
+---@param options? da.WeightOptions
+---@return da.Behavior
+function da.playable_control(playable, options) end
+
+--- Turns locomotion off, or back on.
+---@param enabled boolean
+---@return da.Behavior
+function da.locomotion(enabled) end
+
+--- Moves the viewpoint to the head, or back to where it was.
+---@param mode da.PoseSpace
+---@param options? da.PoseSpaceOptions
+---@return da.Behavior
+function da.pose_space(mode, options) end
+
+--- Plays clips on an AudioSource when the state is entered or left.
+---
+--- `source` is the path of the object holding the AudioSource, read like any other object path of
+--- the controller; an empty string is the root that those paths start at. A bare clip name is an
+--- `UnityEngine.AudioClip`.
+---@param source string
+---@param options da.PlayAudioOptions
+---@param clips da.AudioClipList
+---@return da.Behavior
+---@overload fun(source: string, clips: da.AudioClipList): da.Behavior
+function da.play_audio(source, options, clips) end
 
 --------------------------------------------------------------------------------
 -- Layers

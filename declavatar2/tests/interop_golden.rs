@@ -7,7 +7,7 @@ use std::{
 use declavatar2::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
+        DirectField, LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
         TransitionSource, TransitionTarget,
     },
     core::{Compiled, Extern, Resolved, SourceLocation, Unresolved, value_set::ValueSet},
@@ -19,7 +19,8 @@ use declavatar2::{
         GenericStateBehavior, GenericValue, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe, MergeMode, ObjectPath, PathMode,
     },
     vrchat::{
-        ParameterDrive, ParameterDriveTarget, PlayableLayer, TrackingControl, TrackingControlMode, TrackingControlTarget,
+        ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlayableLayer,
+        PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
         expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
     },
 };
@@ -75,10 +76,12 @@ struct Refs {
     body: Extern<ObjectPath>,
     hat: Extern<ObjectPath>,
     light: Extern<ComponentType>,
-    layer_control: Extern<ComponentType>,
+    custom_behavior: Extern<ComponentType>,
     material: Extern<Asset>,
     clip: Extern<Asset>,
     mask: Extern<Asset>,
+    speaker: Extern<ObjectPath>,
+    voice: Extern<Asset>,
 }
 
 fn externals() -> (Externals, Refs) {
@@ -90,10 +93,9 @@ fn externals() -> (Externals, Refs) {
     let light = externals
         .component_types
         .intern(Unresolved::located("UnityEngine.Light".into(), at("avatar.lua", 12)));
-    let layer_control = externals.component_types.intern(Unresolved::located(
-        "VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl".into(),
-        at("avatar.lua", 20),
-    ));
+    let custom_behavior = externals
+        .component_types
+        .intern(Unresolved::located("Example.CustomStateBehaviour".into(), at("avatar.lua", 20)));
     let material = externals.assets.intern(Unresolved::located(
         AssetLocator::Named {
             asset_type: "UnityEngine.Material".into(),
@@ -105,6 +107,14 @@ fn externals() -> (Externals, Refs) {
         .assets
         .intern(Unresolved::new(AssetLocator::Guid("0123456789abcdef0123456789abcdef".into())));
     let mask = externals.assets.intern(Unresolved::new(AssetLocator::Path("Assets/Masks/Hands.mask".into())));
+    let speaker = externals.object_paths.intern(Unresolved::located("Speaker".into(), at("avatar.lua", 30)));
+    let voice = externals.assets.intern(Unresolved::located(
+        AssetLocator::Named {
+            asset_type: "UnityEngine.AudioClip".into(),
+            name: "Voice".into(),
+        },
+        at("avatar.lua", 31),
+    ));
     externals.needs_relative_root = true;
     (
         externals,
@@ -112,10 +122,12 @@ fn externals() -> (Externals, Refs) {
             body,
             hat,
             light,
-            layer_control,
+            custom_behavior,
             material,
             clip,
             mask,
+            speaker,
+            voice,
         },
     )
 }
@@ -441,7 +453,7 @@ fn behaviors(refs: &Refs) -> Vec<Behavior> {
             ]),
         }),
         Behavior::Generic(GenericStateBehavior {
-            type_name: refs.layer_control,
+            type_name: refs.custom_behavior,
             fields: BTreeMap::from([
                 ("blendDuration".to_string(), GenericValue::Float(0.5)),
                 ("debugString".to_string(), GenericValue::String(String::new())),
@@ -452,6 +464,77 @@ fn behaviors(refs: &Refs) -> Vec<Behavior> {
                     GenericValue::Map(BTreeMap::from([("x".to_string(), GenericValue::List(vec![]))])),
                 ),
             ]),
+        }),
+        Behavior::LayerControl(LayerControl {
+            layer: LayerRef { controller: 0, layer: 3 },
+            goal_weight: 0.5,
+            blend_duration: 0.25,
+        }),
+        Behavior::LocomotionControl(LocomotionControl { disable_locomotion: true }),
+        Behavior::TemporaryPoseSpace(TemporaryPoseSpace {
+            enter: true,
+            fixed_delay: false,
+            delay: 0.5,
+        }),
+        Behavior::TemporaryPoseSpace(TemporaryPoseSpace {
+            enter: false,
+            fixed_delay: true,
+            delay: 0.0,
+        }),
+        Behavior::PlayableLayerControl(PlayableLayerControl {
+            playable: BlendablePlayable::Action,
+            goal_weight: 0.0,
+            blend_duration: 1.5,
+        }),
+        Behavior::PlayAudio(PlayAudio {
+            source: Some(refs.speaker),
+            order: PlaybackOrder::Parameter(int("Emote")),
+            clips: AudioSetting {
+                value: vec![refs.voice, refs.voice],
+                apply: ApplySettings::Always,
+            },
+            volume: AudioSetting {
+                value: [0.25, 0.75],
+                apply: ApplySettings::IfStopped,
+            },
+            pitch: AudioSetting {
+                value: [-3.0, 3.0],
+                apply: ApplySettings::Never,
+            },
+            looping: AudioSetting {
+                value: true,
+                apply: ApplySettings::IfStopped,
+            },
+            delay: 60.0,
+            play_on_enter: true,
+            stop_on_enter: false,
+            play_on_exit: true,
+            stop_on_exit: false,
+        }),
+        Behavior::PlayAudio(PlayAudio {
+            source: None,
+            order: PlaybackOrder::UniqueRandom,
+            clips: AudioSetting {
+                value: vec![],
+                apply: ApplySettings::Never,
+            },
+            volume: AudioSetting {
+                value: [1.0, 1.0],
+                apply: ApplySettings::Always,
+            },
+            pitch: AudioSetting {
+                value: [1.0, 1.0],
+                apply: ApplySettings::IfStopped,
+            },
+            looping: AudioSetting {
+                value: false,
+                apply: ApplySettings::Never,
+            },
+            delay: 0.0,
+            play_on_enter: false,
+            stop_on_enter: true,
+            play_on_exit: false,
+            stop_on_exit: true,
         }),
     ]
 }
@@ -610,7 +693,78 @@ fn gesture_layers(refs: &Refs) -> Vec<AnimatorLayer> {
                 Some(fixed([(game_object(refs.hat, AnimatedGameObjectProperty::Active), AnimatedValue::Bool(true))])),
                 Playback::default(),
                 false,
-                vec![],
+                vec![
+                    Behavior::LayerControl(LayerControl {
+                        layer: LayerRef { controller: 1, layer: 0 },
+                        goal_weight: 1.0,
+                        blend_duration: 0.0,
+                    }),
+                    Behavior::PlayableLayerControl(PlayableLayerControl {
+                        playable: BlendablePlayable::Fx,
+                        goal_weight: 1.0,
+                        blend_duration: 0.0,
+                    }),
+                    Behavior::PlayableLayerControl(PlayableLayerControl {
+                        playable: BlendablePlayable::Gesture,
+                        goal_weight: 1.0,
+                        blend_duration: 0.0,
+                    }),
+                    Behavior::PlayableLayerControl(PlayableLayerControl {
+                        playable: BlendablePlayable::Additive,
+                        goal_weight: 1.0,
+                        blend_duration: 0.0,
+                    }),
+                    Behavior::PlayAudio(PlayAudio {
+                        source: Some(refs.speaker),
+                        order: PlaybackOrder::Random,
+                        clips: AudioSetting {
+                            value: vec![refs.voice],
+                            apply: ApplySettings::IfStopped,
+                        },
+                        volume: AudioSetting {
+                            value: [0.0, 1.0],
+                            apply: ApplySettings::IfStopped,
+                        },
+                        pitch: AudioSetting {
+                            value: [1.0, 1.0],
+                            apply: ApplySettings::IfStopped,
+                        },
+                        looping: AudioSetting {
+                            value: false,
+                            apply: ApplySettings::IfStopped,
+                        },
+                        delay: 0.0,
+                        play_on_enter: true,
+                        stop_on_enter: true,
+                        play_on_exit: false,
+                        stop_on_exit: false,
+                    }),
+                    Behavior::PlayAudio(PlayAudio {
+                        source: Some(refs.speaker),
+                        order: PlaybackOrder::Roundabout,
+                        clips: AudioSetting {
+                            value: vec![refs.voice],
+                            apply: ApplySettings::IfStopped,
+                        },
+                        volume: AudioSetting {
+                            value: [1.0, 1.0],
+                            apply: ApplySettings::IfStopped,
+                        },
+                        pitch: AudioSetting {
+                            value: [1.0, 1.0],
+                            apply: ApplySettings::IfStopped,
+                        },
+                        looping: AudioSetting {
+                            value: false,
+                            apply: ApplySettings::IfStopped,
+                        },
+                        delay: 0.0,
+                        play_on_enter: true,
+                        stop_on_enter: true,
+                        play_on_exit: false,
+                        stop_on_exit: false,
+                    }),
+                ],
             ),
         ],
         transitions: vec![

@@ -1,5 +1,8 @@
 use crate::{
-    avatar::{self, controller::ParameterRef},
+    avatar::{
+        self,
+        controller::{LayerRef, ParameterRef},
+    },
     core::{
         phase::{Compiled, Declared},
         resolution::{SourceLocation, Unresolved},
@@ -13,8 +16,15 @@ use crate::{
         state::GenericStateBehavior,
         value::{AnimatedValue, AnimatedValueCast, AnimatedValueType},
     },
-    vrchat::state_behaviour::{ParameterDrive, ParameterDriveTarget},
+    vrchat::state_behaviour::{AudioSetting, BlendablePlayable, LayerControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlaybackOrder},
 };
+
+/// Type names that `da.behavior` must not carry, because the layer index they take is only known to the client.
+const LAYER_CONTROL_TYPES: &[&str] = &[
+    "VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl",
+    "VRCAnimatorLayerControl",
+    "VRC.SDKBase.VRC_AnimatorLayerControl",
+];
 
 impl Context {
     pub fn behaviors(&mut self, behaviors: &[Behavior]) -> Result<Vec<avatar::Behavior>, TransformError> {
@@ -33,10 +43,86 @@ impl Context {
                 target: self.drive_target(target)?,
             }),
             Behavior::TrackingControl(tracking) => avatar::Behavior::TrackingControl(tracking.clone()),
-            Behavior::Generic(generic) => avatar::Behavior::Generic(GenericStateBehavior {
-                type_name: self.externals.component_types.intern(generic.type_name.clone()),
-                fields: generic.fields.clone(),
+            Behavior::Generic(generic) => {
+                if LAYER_CONTROL_TYPES.contains(&generic.type_name.value.as_str()) {
+                    return Err(TransformErrorKind::LayerControlByIndex {
+                        type_name: generic.type_name.value.clone(),
+                    }
+                    .at(generic.type_name.at.clone()));
+                }
+                avatar::Behavior::Generic(GenericStateBehavior {
+                    type_name: self.externals.component_types.intern(generic.type_name.clone()),
+                    fields: generic.fields.clone(),
+                })
+            }
+            Behavior::LayerControl(control) => avatar::Behavior::LayerControl(LayerControl {
+                layer: self.controlled_layer(&control.layer)?,
+                goal_weight: control.goal_weight,
+                blend_duration: control.blend_duration,
             }),
+            Behavior::LocomotionControl(control) => avatar::Behavior::LocomotionControl(*control),
+            Behavior::TemporaryPoseSpace(control) => avatar::Behavior::TemporaryPoseSpace(*control),
+            Behavior::PlayableLayerControl(control) => avatar::Behavior::PlayableLayerControl(control.clone()),
+            Behavior::PlayAudio(audio) => avatar::Behavior::PlayAudio(self.play_audio(audio)?),
+        })
+    }
+
+    /// The position of a layer that a layer control in the current controller may reach.
+    fn controlled_layer(&self, reference: &Unresolved<String>) -> Result<LayerRef, TransformError> {
+        let current = self.current_controller.expect("state behaviors are compiled inside a controller");
+        let playable = self.playables[current];
+        if BlendablePlayable::of(playable).is_none() {
+            return Err(TransformErrorKind::UncontrollablePlayable { playable }.at(reference.at.clone()));
+        }
+
+        self.layer(reference)?;
+        let position = &self.layer_positions[&reference.value];
+        if let Some(blend) = &position.merged_into {
+            return Err(TransformErrorKind::LayerMergedIntoBlend {
+                name: reference.value.clone(),
+                blend: blend.clone(),
+            }
+            .at(reference.at.clone()));
+        }
+        let found = self.playables[position.controller];
+        if found != playable {
+            return Err(TransformErrorKind::LayerInAnotherPlayable {
+                name: reference.value.clone(),
+                expected: playable,
+                found,
+            }
+            .at(reference.at.clone()));
+        }
+
+        Ok(LayerRef {
+            controller: position.controller,
+            layer: position.layer,
+        })
+    }
+
+    fn play_audio(&mut self, audio: &PlayAudio<Declared>) -> Result<PlayAudio<Compiled>, TransformError> {
+        let order = match &audio.order {
+            PlaybackOrder::Random => PlaybackOrder::Random,
+            PlaybackOrder::UniqueRandom => PlaybackOrder::UniqueRandom,
+            PlaybackOrder::Roundabout => PlaybackOrder::Roundabout,
+            PlaybackOrder::Parameter(parameter) => PlaybackOrder::Parameter(self.parameters.resolve_typed(parameter, AnimatedValueType::Int)?),
+        };
+        let externals = &mut self.externals;
+        Ok(PlayAudio {
+            source: audio.source.clone().map(|path| externals.object_paths.intern(path)),
+            order,
+            clips: AudioSetting {
+                value: audio.clips.value.iter().map(|clip| externals.assets.intern(clip.clone())).collect(),
+                apply: audio.clips.apply,
+            },
+            volume: audio.volume.clone(),
+            pitch: audio.pitch.clone(),
+            looping: audio.looping.clone(),
+            delay: audio.delay,
+            play_on_enter: audio.play_on_enter,
+            stop_on_enter: audio.stop_on_enter,
+            play_on_exit: audio.play_on_exit,
+            stop_on_exit: audio.stop_on_exit,
         })
     }
 

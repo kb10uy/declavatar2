@@ -1,7 +1,7 @@
 use crate::{
     core::{phase::Declared, resolution::Unresolved, value_set::ValueSet},
     unity::{animation::FixedAnimationEntry, state::GenericStateBehavior, value::AnimatedValue},
-    vrchat::state_behaviour::{ParameterDriveTarget, TrackingControl},
+    vrchat::state_behaviour::{LayerControl, LocomotionControl, ParameterDriveTarget, PlayAudio, PlayableLayerControl, TemporaryPoseSpace, TrackingControl},
 };
 
 /// Set of animated targets and their values written in one place of the script.
@@ -31,6 +31,14 @@ pub enum Behavior {
 
     /// State behavior of a type declavatar2 does not know about.
     Generic(GenericStateBehavior<Declared>),
+
+    /// Layer weight control naming a layer of the script, which the transform turns into the layer's position.
+    LayerControl(LayerControl<Declared>),
+
+    LocomotionControl(LocomotionControl),
+    TemporaryPoseSpace(TemporaryPoseSpace),
+    PlayableLayerControl(PlayableLayerControl),
+    PlayAudio(PlayAudio<Declared>),
 }
 
 /// Parameter drive written as `da.drive_*`.

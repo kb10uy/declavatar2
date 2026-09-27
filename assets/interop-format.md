@@ -14,7 +14,7 @@ Every blob starts with 16 bytes. All multi-byte integers in the whole blob are l
 |---|---|---|---|
 | 0 | 4 | `magic` | `"DA2a"` (`44 41 32 61`) for Avatar, `"DA2d"` (`44 41 32 64`) for Diagnostics |
 | 4 | 2 | `schema_version` | u16. Version of the encoding rules below. Currently `1`. |
-| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `2` for Avatar and `1` for Diagnostics. |
+| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `3` for Avatar and `1` for Diagnostics. |
 | 8 | 4 | `reserved` | Zero. |
 | 12 | 4 | `payload_len` | u32. Number of bytes following the header. |
 | 16 | `payload_len` | `payload` | See the payload sections. |
@@ -273,9 +273,33 @@ Where the model holds `AnimatedValue<()>` (menu controls and parameter drives), 
 
 ```
 Behavior: enum
-  0 ParameterDrive  : target ParameterDriveTarget
-  1 TrackingControl : modes u8 × 10
-  2 Generic         : type_name extern (component type), fields map<string, GenericValue>
+  0 ParameterDrive       : target ParameterDriveTarget
+  1 TrackingControl      : modes u8 × 10
+  2 Generic              : type_name extern (component type), fields map<string, GenericValue>
+  3 LayerControl         : layer LayerRef, goal_weight f64, blend_duration f64
+  4 LocomotionControl    : disable_locomotion bool
+  5 TemporaryPoseSpace   : enter bool, fixed_delay bool, delay f64
+  6 PlayableLayerControl : playable u8, goal_weight f64, blend_duration f64
+  7 PlayAudio            : source option<extern> (object path), order PlaybackOrder,
+                           clips list<extern> (asset), clips_apply u8,
+                           volume_min f64, volume_max f64, volume_apply u8,
+                           pitch_min f64, pitch_max f64, pitch_apply u8,
+                           loop bool, loop_apply u8,
+                           delay f64, play_on_enter bool, stop_on_enter bool, play_on_exit bool, stop_on_exit bool
+
+LayerRef:
+  controller : u32                         (index into Avatar.controllers)
+  layer      : u32                         (index into the layers of that controller)
+
+playable: 0 Action, 1 Fx, 2 Gesture, 3 Additive
+
+PlaybackOrder: enum
+  0 Random
+  1 UniqueRandom
+  2 Roundabout
+  3 Parameter : param
+
+clips_apply, volume_apply, pitch_apply, loop_apply: 0 Always, 1 IfStopped, 2 Never
 
 ParameterDriveTarget: enum
   0 Set         : parameter param, value AnimatedValue
@@ -299,6 +323,14 @@ GenericValue: enum
   4 List   : list<GenericValue>
   5 Map    : map<string, GenericValue>
 ```
+
+A `LayerControl` names the layer it blends by position rather than by an animator layer index, because the index a layer ends up at is only known once the client has merged the controllers. The client finds `controllers[controller]`, takes the animator layer it generated for `layers[layer]`, and writes that layer's final index and the controller's playable layer into the component. The following hold for every `LayerControl`; a reader checks them once the whole controller list has been read and rejects the avatar otherwise:
+
+- The controller holding the state is `Action`, `Fx`, `Gesture` or `Additive`.
+- `controller` is in range for `Avatar.controllers`, and `layer` is in range for the layers of that controller.
+- The referenced controller has the same `playable` as the controller holding the state. It may be a different controller, such as one of another priority.
+
+`playable` of a `PlayableLayerControl` and the `PlaybackOrder` and apply discriminators follow the numbering of the VRChat enums they stand for. `enter` of a `TemporaryPoseSpace` is `true` for Enter and `false` for Exit; `delay` is in seconds when `fixed_delay` is `true` and a fraction of the state otherwise. A `PlayAudio` without a `source` plays the AudioSource on the root that the controller's object paths start at: the avatar root, or the supplied root for a relative controller. A source path is resolved like any other object path of that controller.
 
 ### Menu
 

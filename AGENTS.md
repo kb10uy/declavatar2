@@ -97,6 +97,13 @@ Lua script
 #### State Behaviors
 
 - Parameter drives and tracking control stay typed, because the transform has to understand them: drives resolve layer references into concrete parameter values.
+- Every other VRChat state behavior is typed too, so a script gets checked options and the client gets a fixed layout. They are `da.Behavior` nodes, never usable on a menu item:
+    - `da.layer_control(layer[, { goal_weight, blend_duration }])` (`VRCAnimatorLayerControl`). `goal_weight` is in `0..1` and defaults to `1`; `blend_duration` is seconds and defaults to `0`.
+    - `da.playable_control(playable[, { goal_weight, blend_duration }])` (`VRCPlayableLayerControl`), where `playable` is `"additive"`, `"gesture"`, `"action"` or `"fx"`.
+    - `da.locomotion(enabled)` (`VRCAnimatorLocomotionControl`). The boolean is required; `da.locomotion(false)` disables locomotion.
+    - `da.pose_space(mode[, { delay, fixed_delay }])` (`VRCAnimatorTemporaryPoseSpace`), `mode` being `"enter"` or `"exit"`. `delay` defaults to `0` and is in seconds unless `fixed_delay = false` makes it a fraction of the state.
+    - `da.play_audio(source[, options], clips)` (`VRCAnimatorPlayAudio`). `source` is an object path, `""` meaning the root the controller's paths start at, and a bare clip name is an `UnityEngine.AudioClip`. The options and their defaults follow the component: `order` (`"random"`, `"unique_random"`, `"roundabout"`, `"parameter"`), `parameter` (an int parameter; writing it alone implies order `"parameter"`), `volume` (`{ 1, 1 }` in `0..1`), `pitch` (`{ 1, 1 }` in `-3..3`), `loop` (`false`), `delay` (`0`, up to `60` seconds), `play_on_enter` / `stop_on_enter` (`true`), `play_on_exit` / `stop_on_exit` (`false`), and `clips_apply`, `volume_apply`, `pitch_apply`, `loop_apply` (`"always"`, `"if_stopped"` (default), `"never"`).
+- A layer control names a layer written in the script (group, switch, puppet, blend or raw), because the animator layer index is only known to the client: the Unity client builds the controllers as NDMF virtual controllers, whose layer numbers have nothing to do with the order declavatar2 generates layers in. For the same reason `da.behavior` rejects the `VRCAnimatorLayerControl` type name and points at `da.layer_control`.
 - Drives that set a value (`da.drive_group`, `da.drive_switch`, `da.drive_puppet`, `da.drive_bool`, `da.drive_int`, `da.drive_float`) are `da.Drive` nodes, usable both in a state and on a menu item. Drives that only a state can run are `da.Behavior` nodes, so a menu item cannot take one: `da.drive_add(parameter, value)` (int or float parameter), `da.drive_random_int(parameter, min, max)`, `da.drive_random_bool(parameter[, chance])` (chance defaults to `0.5`), `da.drive_random_float(parameter, min, max)` and `da.drive_copy(from, to[, { from_range, to_range }])`, which becomes a ranged copy when both ranges are written. Their parameter types are checked in the 2nd pass.
 - Any other state behavior is written with `da.behavior(type_name[, fields])` and carried verbatim by `GenericStateBehavior`, which holds a type name and a tree of `GenericValue` (bool, integer, float, string, list, map). The transform passes the fields through untouched and the client feeds them to the actual component.
 - The type name goes through the component type `ExternTable`, like the type of `da.component`, so a type the client cannot find is reported at the line of `da.behavior`.
@@ -205,6 +212,10 @@ return da.avatar({
     - Clip options on the motion of a state become the state's `Playback` (`speed`, `speed_by`, `time_by`). Inside a blend tree only `speed` is meaningful and it becomes the field's speed; `speed_by` and `time_by` there are errors.
     - Group and switch transitions have duration `0.0`. Raw transitions preserve the written `duration`, defaulting to `0.0`.
     - Write Defaults is on only for the generated state of a blend layer; group, switch, puppet and raw states use off. The raw Lua API does not expose a Write Defaults option.
+- State behaviors
+    - A layer control resolves to a `LayerRef`: the index of the controller in `Avatar.controllers` and of the layer in that controller. The controller holding the state must be Action, FX, Gesture or Additive, and the named layer must belong to a controller of the same playable layer, which may be another controller of that playable layer (a different priority, say). A child of a blend layer is merged and cannot be named. Each is a located error, as is an unknown layer.
+    - Two layers of one name never reach the layer control, because layer names are already unique across the avatar (`DuplicateLayer`), so no separate ambiguity check exists.
+    - `da.play_audio` interns its source into the object path table and its clips into the asset table, and resolves `parameter` as an int parameter.
 - Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
 - Not done yet: the Unity client and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
 
@@ -224,6 +235,7 @@ return da.avatar({
 - Rust side: a hand-written `Encode` / `Decode` per type in a `declavatar2::interop` module, with explicit discriminator constants. `serde` and `rmp-serde` are not dependencies.
 - C# side: a hand-written reader mirroring the Rust encoder one to one. No serialization library dependency.
 - Externals come first in the avatar payload so the client can resolve every table before reading the body that indexes into them.
+- A `LayerRef` carries no playable layer, since the referenced controller has one. Its indices are checked only after the whole controller list is decoded, because a layer control may point at a later controller.
 - How the FFI hands the blob over is decided in the C FFI section.
 
 ### C FFI

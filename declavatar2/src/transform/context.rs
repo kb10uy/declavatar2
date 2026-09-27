@@ -13,14 +13,35 @@ use crate::{
         external::Externals,
         value::AnimatedValueType,
     },
-    vrchat::expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, VrchatProvidedParameter},
+    vrchat::{
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, VrchatProvidedParameter},
+        playable_layer::PlayableLayer,
+    },
 };
 
 /// Everything the 1st pass collects, and what the 2nd pass resolves against.
 pub(crate) struct Context {
     pub parameters: ParameterTable,
     pub layers: BTreeMap<String, LayerInfo>,
+    pub layer_positions: BTreeMap<String, LayerPosition>,
+
+    /// The playable layer of each controller, in declaration order.
+    pub playables: Vec<PlayableLayer>,
+
+    /// The controller whose layers the 2nd pass is compiling.
+    pub current_controller: Option<usize>,
+
     pub externals: Externals,
+}
+
+/// Where a declared layer ends up among the compiled controllers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LayerPosition {
+    pub controller: usize,
+    pub layer: usize,
+
+    /// The blend layer a child layer is merged into, which is the compiled layer at this position.
+    pub merged_into: Option<String>,
 }
 
 impl Context {
@@ -29,6 +50,9 @@ impl Context {
         let mut context = Self {
             parameters: ParameterTable::default(),
             layers: BTreeMap::new(),
+            layer_positions: BTreeMap::new(),
+            playables: declaration.controllers.iter().map(|controller| controller.playable).collect(),
+            current_controller: None,
             externals: Externals::default(),
         };
         let mut errors = Vec::new();
@@ -38,9 +62,16 @@ impl Context {
                 errors.push(error);
             }
         }
-        for layer in declaration.layers() {
-            if let Err(error) = context.collect_layer(layer) {
-                errors.push(error);
+        for (controller, declared) in declaration.controllers.iter().enumerate() {
+            for (layer, written) in declared.layers.iter().enumerate() {
+                let position = LayerPosition {
+                    controller,
+                    layer,
+                    merged_into: None,
+                };
+                if let Err(error) = context.collect_layer(written, position) {
+                    errors.push(error);
+                }
             }
         }
 
@@ -63,7 +94,7 @@ impl Context {
         }
     }
 
-    fn collect_layer(&mut self, layer: &Layer) -> Result<(), TransformError> {
+    fn collect_layer(&mut self, layer: &Layer, position: LayerPosition) -> Result<(), TransformError> {
         let info = match layer {
             Layer::Group(group) => {
                 let mut options = BTreeMap::new();
@@ -88,12 +119,16 @@ impl Context {
                 parameter: driver(puppet.driven_by.as_ref(), &puppet.name, puppet.at.as_ref()),
             },
             Layer::Blend(blend) => {
-                self.register_layer(&blend.name, LayerInfo::Blend, blend.at.as_ref())?;
+                self.register_layer(&blend.name, LayerInfo::Blend, position.clone(), blend.at.as_ref())?;
                 for puppet in &blend.puppets {
                     self.register_layer(
                         &puppet.name,
                         LayerInfo::Puppet {
                             parameter: driver(puppet.driven_by.as_ref(), &puppet.name, puppet.at.as_ref()),
+                        },
+                        LayerPosition {
+                            merged_into: Some(blend.name.clone()),
+                            ..position.clone()
                         },
                         puppet.at.as_ref(),
                     )?;
@@ -102,14 +137,15 @@ impl Context {
             }
             Layer::Raw(_) => LayerInfo::Raw,
         };
-        self.register_layer(layer.name(), info, layer.at())
+        self.register_layer(layer.name(), info, position, layer.at())
     }
 
-    fn register_layer(&mut self, name: &str, info: LayerInfo, at: Option<&SourceLocation>) -> Result<(), TransformError> {
+    fn register_layer(&mut self, name: &str, info: LayerInfo, position: LayerPosition, at: Option<&SourceLocation>) -> Result<(), TransformError> {
         if self.layers.contains_key(name) {
             return Err(TransformErrorKind::DuplicateLayer { name: name.to_owned() }.at(at.cloned()));
         }
         self.layers.insert(name.to_owned(), info);
+        self.layer_positions.insert(name.to_owned(), position);
         Ok(())
     }
 
@@ -616,6 +652,44 @@ mod tests {
             })
         );
         assert!(context.layers.contains_key("Brow"));
+    }
+
+    #[rstest]
+    fn layers_are_recorded_where_they_are_compiled() {
+        let (context, errors) = collect(Avatar {
+            controllers: vec![
+                Controller::new(PlayableLayer::Gesture, vec![group("Left", None, &[], 1)]),
+                Controller::new(
+                    PlayableLayer::Fx,
+                    vec![
+                        group("Expressions", None, &[], 2),
+                        Layer::Blend(BlendLayer {
+                            name: "Face".into(),
+                            puppets: vec![puppet("Wink", 4)],
+                            at: at(3),
+                        }),
+                    ],
+                ),
+            ],
+            ..Avatar::default()
+        });
+
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(context.playables, [PlayableLayer::Gesture, PlayableLayer::Fx]);
+        let position = |controller, layer, merged_into: Option<&str>| LayerPosition {
+            controller,
+            layer,
+            merged_into: merged_into.map(Into::into),
+        };
+        assert_eq!(
+            context.layer_positions,
+            BTreeMap::from([
+                ("Left".to_owned(), position(0, 0, None)),
+                ("Expressions".to_owned(), position(1, 0, None)),
+                ("Face".to_owned(), position(1, 1, None)),
+                ("Wink".to_owned(), position(1, 1, Some("Face"))),
+            ])
+        );
     }
 
     #[rstest]

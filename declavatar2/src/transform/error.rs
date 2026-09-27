@@ -8,6 +8,7 @@ use thiserror::Error;
 use crate::{
     core::resolution::SourceLocation,
     unity::{animation::CurveError, value::AnimatedValueType},
+    vrchat::playable_layer::PlayableLayer,
 };
 
 /// One thing the transform could not accept, and where in the script it was written.
@@ -165,6 +166,22 @@ pub enum TransformErrorKind {
 
     #[error("`{option}` can only be set on the motion of a state, not on a field of a blend tree")]
     NestedPlayback { option: &'static str },
+
+    #[error("a layer control cannot be used in a {playable:?} controller; only Action, Fx, Gesture and Additive layers can be controlled")]
+    UncontrollablePlayable { playable: PlayableLayer },
+
+    #[error("layer `{name}` is in a {found:?} controller, but a layer control can only reach layers of its own {expected:?} playable layer")]
+    LayerInAnotherPlayable {
+        name: String,
+        expected: PlayableLayer,
+        found: PlayableLayer,
+    },
+
+    #[error("layer `{name}` is merged into blend layer `{blend}`, so its weight cannot be controlled on its own")]
+    LayerMergedIntoBlend { name: String, blend: String },
+
+    #[error("`{type_name}` takes a layer index that the script cannot know; write `da.layer_control(layer, ...)` with the layer name instead")]
+    LayerControlByIndex { type_name: String },
 
     #[error("an axis takes a parameter name or `da.drive_puppet(layer)` without a value")]
     InvalidAxis,

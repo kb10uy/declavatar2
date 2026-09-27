@@ -238,6 +238,7 @@ mod tests {
         type ObjectPath = &'static str;
         type ComponentType = &'static str;
         type ObjectRef = &'static str;
+        type LayerRef = &'static str;
     }
 
     fn blend_shape(name: &str) -> AnimatedTarget<TestPhase> {

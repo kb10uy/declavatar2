@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use declavatar2::{
     CompileError, EvaluateOptions,
     avatar::{
-        Avatar, Behavior,
+        Avatar, Behavior, LayerRef,
         controller::{AnimatorCondition, Clip, Motion, TransitionSource, TransitionTarget},
         menu::{MenuDirection, MenuItem},
     },
@@ -17,7 +17,8 @@ use declavatar2::{
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        ParameterDrive, ParameterDriveTarget,
+        ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlayableLayerControl,
+        PlaybackOrder, TemporaryPoseSpace,
         expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
         playable_layer::PlayableLayer,
     },
@@ -302,7 +303,7 @@ return da.avatar({
                         da.drive_add("Emote", 1),
                         da.drive_random_bool("Coin"),
                         da.drive_copy("GestureLeftWeight", "Blend", { from_range = { 0, 1 }, to_range = { -1, 1 } }),
-                        da.behavior("VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl", { goalWeight = 1, layer = 3, blendableLayers = { true, false } }),
+                        da.behavior("Example.CustomStateBehaviour", { goalWeight = 1, layer = 3, blendableLayers = { true, false } }),
                     },
                 }, {
                     da.raw.transition("Wave", {}),
@@ -412,7 +413,7 @@ fn state_features_compile_through_to_the_avatar() {
         panic!("expected a generic behavior last");
     };
     let type_entry = avatar.externals.component_types.get(generic.type_name);
-    assert_eq!(type_entry.value, "VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl");
+    assert_eq!(type_entry.value, "Example.CustomStateBehaviour");
     assert_eq!(type_entry.referenced_at.iter().map(|at| at.line).collect::<Vec<_>>(), [25]);
     assert_eq!(
         generic.fields,
@@ -471,6 +472,224 @@ return da.avatar({
     );
 
     assert_eq!(errors, vec!["avatar.lua:8: `add` cannot be applied to parameter `Hat` of type Bool"]);
+}
+
+const LAYER_CONTROLS: &str = r#"local da = require "declavatar"
+
+local Body = da.renderer("Body")
+
+return da.avatar({
+    parameters = { da.bool("Hat"), da.float("Blend"), da.int("Voice") },
+    controllers = {
+        da.controller("fx", {
+            da.switch_layer("Hat", {}, { da.object("Hat"):active() }),
+            da.raw.layer("Control", {}, {
+                da.raw.state("Idle", { behaviors = {
+                    da.layer_control("Hat", { goal_weight = 0, blend_duration = 0.5 }),
+                    da.layer_control("Face"),
+                    da.layer_control("Late"),
+                    da.locomotion(false),
+                    da.pose_space("enter", { delay = 0.5, fixed_delay = false }),
+                    da.playable_control("action", { goal_weight = 0 }),
+                    da.play_audio("Speaker", { parameter = "Voice", volume = { 0.5, 1 } }, { "Hello", "Bye" }),
+                    da.play_audio("", {}),
+                } }),
+            }),
+            da.blend_layer("Face", {
+                da.puppet_layer("Brow", { driven_by = "Blend" }, { da.keyframe(0, { Body:shape("brow", 0) }), da.keyframe(1, { Body:shape("brow") }) }),
+            }),
+        }),
+        da.controller("gesture", {
+            da.switch_layer("Wave", { driven_by = "Hat" }, { da.object("Wave"):active() }),
+        }),
+        da.controller("fx", { priority = 10 }, {
+            da.raw.layer("Late", {}, {
+                da.raw.state("Only", { behaviors = { da.layer_control("Control") } }),
+            }),
+        }),
+    },
+})
+"#;
+
+fn behaviors_of(avatar: &Avatar, controller: usize, layer: usize) -> &[Behavior] {
+    &avatar.controllers[controller].controller.layers[layer].states[0].behaviors
+}
+
+fn layer_control(controller: usize, layer: usize, goal_weight: f64, blend_duration: f64) -> Behavior {
+    Behavior::LayerControl(LayerControl {
+        layer: LayerRef { controller, layer },
+        goal_weight,
+        blend_duration,
+    })
+}
+
+#[rstest]
+fn a_layer_control_reaches_any_layer_of_its_playable_layer_by_name() {
+    let avatar = compile(LAYER_CONTROLS, "avatar.lua", &EvaluateOptions::new()).expect("the script should compile");
+
+    assert_eq!(
+        behaviors_of(&avatar, 0, 1)[..3],
+        [layer_control(0, 0, 0.0, 0.5), layer_control(0, 2, 1.0, 0.0), layer_control(2, 0, 1.0, 0.0)]
+    );
+    assert_eq!(behaviors_of(&avatar, 2, 0), [layer_control(0, 1, 1.0, 0.0)]);
+
+    let blob = declavatar2::interop::encode_avatar(&avatar).expect("the avatar should encode");
+    assert_eq!(declavatar2::interop::decode_avatar(&blob).expect("the blob should decode"), avatar);
+}
+
+#[rstest]
+fn the_other_vrchat_behaviors_compile_through_to_the_avatar() {
+    let avatar = compile(LAYER_CONTROLS, "avatar.lua", &EvaluateOptions::new()).expect("the script should compile");
+    let behaviors = &behaviors_of(&avatar, 0, 1)[3..];
+
+    let speaker = avatar
+        .externals
+        .object_paths
+        .entries()
+        .iter()
+        .position(|entry| entry.value == "Speaker")
+        .expect("the source should be interned");
+    let clips: Vec<_> = ["Hello", "Bye"]
+        .map(|name| {
+            let locator = AssetLocator::Named {
+                asset_type: "UnityEngine.AudioClip".into(),
+                name: name.into(),
+            };
+            let index = avatar
+                .externals
+                .assets
+                .entries()
+                .iter()
+                .position(|entry| entry.value == locator)
+                .expect("the clip should be interned");
+            assert_eq!(
+                avatar.externals.assets.entries()[index]
+                    .referenced_at
+                    .iter()
+                    .map(|at| at.line)
+                    .collect::<Vec<_>>(),
+                [18]
+            );
+            index as u32
+        })
+        .into();
+
+    let [
+        Behavior::LocomotionControl(locomotion),
+        Behavior::TemporaryPoseSpace(pose_space),
+        Behavior::PlayableLayerControl(playable),
+        Behavior::PlayAudio(audio),
+        Behavior::PlayAudio(root_audio),
+    ] = behaviors
+    else {
+        panic!("expected the behaviors in the written order, got {behaviors:?}");
+    };
+    assert_eq!(*locomotion, LocomotionControl { disable_locomotion: true });
+    assert_eq!(
+        *pose_space,
+        TemporaryPoseSpace {
+            enter: true,
+            fixed_delay: false,
+            delay: 0.5,
+        }
+    );
+    assert_eq!(
+        *playable,
+        PlayableLayerControl {
+            playable: BlendablePlayable::Action,
+            goal_weight: 0.0,
+            blend_duration: 0.0,
+        }
+    );
+
+    assert_eq!(audio.source.map(|source| source.index() as usize), Some(speaker));
+    assert_eq!(audio.order, PlaybackOrder::Parameter(Resolved::new("Voice".into(), AnimatedValueType::Int)));
+    assert_eq!(audio.clips.value.iter().map(|clip| clip.index()).collect::<Vec<_>>(), clips);
+    assert_eq!(
+        audio.volume,
+        AudioSetting {
+            value: [0.5, 1.0],
+            apply: ApplySettings::IfStopped,
+        }
+    );
+
+    let PlayAudio { source, order, clips, .. } = root_audio;
+    assert_eq!((source, order, clips.value.len()), (&None, &PlaybackOrder::Random, 0));
+}
+
+#[rstest]
+fn a_layer_control_that_cannot_be_resolved_is_reported_where_it_was_written() {
+    let errors = errors_of(
+        r#"local da = require "declavatar"
+
+local function control(name, behavior)
+    return da.raw.layer(name, {}, { da.raw.state("Only", { behaviors = { behavior } }) })
+end
+
+return da.avatar({
+    parameters = { da.bool("Hat"), da.float("Blend") },
+    controllers = {
+        da.controller("fx", {
+            da.switch_layer("Hat", {}, { da.object("Hat"):active() }),
+            da.blend_layer("Face", {
+                da.puppet_layer("Brow", { driven_by = "Blend" }, { da.keyframe(0, { da.renderer("Body"):shape("brow") }) }),
+            }),
+            control("Missing", da.layer_control("Nowhere")),
+            control("Crossing", da.layer_control("Wave")),
+            control("Merged", da.layer_control("Brow")),
+            control("ByIndex", da.behavior("VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl", { layer = 1, goalWeight = 1 })),
+            control("ByShortIndex", da.behavior("VRCAnimatorLayerControl", { layer = 1 })),
+            control("Voice", da.play_audio("Speaker", { parameter = "Blend" }, {})),
+        }),
+        da.controller("gesture", {
+            da.switch_layer("Wave", { driven_by = "Hat" }, { da.object("Wave"):active() }),
+        }),
+        da.controller("base", {
+            control("Grounded", da.layer_control("Hat")),
+        }),
+        da.controller("sitting", {
+            control("Seated", da.layer_control("Nowhere")),
+        }),
+    },
+})
+"#,
+    );
+
+    assert_eq!(
+        errors,
+        vec![
+            "avatar.lua:15: layer `Nowhere` is not declared",
+            "avatar.lua:16: layer `Wave` is in a Gesture controller, but a layer control can only reach layers of its own Fx playable layer",
+            "avatar.lua:17: layer `Brow` is merged into blend layer `Face`, so its weight cannot be controlled on its own",
+            "avatar.lua:18: `VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl` takes a layer index that the script cannot know; write `da.layer_control(layer, ...)` with the layer name instead",
+            "avatar.lua:19: `VRCAnimatorLayerControl` takes a layer index that the script cannot know; write `da.layer_control(layer, ...)` with the layer name instead",
+            "avatar.lua:20: parameter `Blend` is Float, but Int is needed here",
+            "avatar.lua:26: a layer control cannot be used in a Base controller; only Action, Fx, Gesture and Additive layers can be controlled",
+            "avatar.lua:29: a layer control cannot be used in a Sitting controller; only Action, Fx, Gesture and Additive layers can be controlled",
+        ]
+    );
+}
+
+#[rstest]
+fn a_layer_name_written_twice_in_one_playable_layer_is_rejected_before_a_layer_control_could_pick_one() {
+    let errors = errors_of(
+        r#"local da = require "declavatar"
+return da.avatar({
+    parameters = { da.bool("Hat") },
+    controllers = {
+        da.controller("fx", {
+            da.switch_layer("Hat", {}, { da.object("Hat"):active() }),
+            da.raw.layer("Control", {}, { da.raw.state("Only", { behaviors = { da.layer_control("Hat") } }) }),
+        }),
+        da.controller("fx", { priority = 10 }, {
+            da.switch_layer("Hat", {}, { da.object("Hat"):active() }),
+        }),
+    },
+})
+"#,
+    );
+
+    assert_eq!(errors, vec!["avatar.lua:10: layer `Hat` is declared more than once"]);
 }
 
 #[rstest]

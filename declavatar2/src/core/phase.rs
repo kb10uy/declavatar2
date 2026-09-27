@@ -1,6 +1,7 @@
 use std::{fmt::Debug, hash::Hash};
 
 use crate::{
+    avatar::controller::LayerRef,
     core::{
         external::Extern,
         resolution::{Resolved, Unresolved},
@@ -25,6 +26,9 @@ pub trait Phase: 'static + Debug + Copy + Ord + Hash {
 
     /// Reference to a Unity asset such as Material or Mesh.
     type ObjectRef: Debug + Clone + Eq + Ord;
+
+    /// Reference to a layer declared in the script.
+    type LayerRef: Debug + Clone + Eq + Ord;
 }
 
 /// Phase right after the script has been evaluated. Every reference is a bare name.
@@ -36,6 +40,7 @@ impl Phase for Declared {
     type ObjectPath = Unresolved<String>;
     type ComponentType = Unresolved<String>;
     type ObjectRef = Unresolved<AssetLocator>;
+    type LayerRef = Unresolved<String>;
 }
 
 /// Phase after the transformer has run. Script-internal references are resolved,
@@ -48,4 +53,5 @@ impl Phase for Compiled {
     type ObjectPath = Extern<ObjectPath>;
     type ComponentType = Extern<ComponentType>;
     type ObjectRef = Extern<Asset>;
+    type LayerRef = LayerRef;
 }
