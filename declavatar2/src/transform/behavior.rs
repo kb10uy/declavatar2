@@ -1,21 +1,27 @@
 use crate::{
     avatar::{self, controller::ParameterRef},
-    core::resolution::{SourceLocation, Unresolved},
+    core::{
+        phase::{Compiled, Declared},
+        resolution::{SourceLocation, Unresolved},
+    },
     decl::behavior::{Behavior, Drive},
     transform::{
         context::{Context, LayerInfo},
         error::{TransformError, TransformErrorKind},
     },
-    unity::value::{AnimatedValue, AnimatedValueCast, AnimatedValueType},
+    unity::{
+        state::GenericStateBehavior,
+        value::{AnimatedValue, AnimatedValueCast, AnimatedValueType},
+    },
     vrchat::state_behaviour::{ParameterDrive, ParameterDriveTarget},
 };
 
 impl Context {
-    pub fn behaviors(&self, behaviors: &[Behavior]) -> Result<Vec<avatar::Behavior>, TransformError> {
+    pub fn behaviors(&mut self, behaviors: &[Behavior]) -> Result<Vec<avatar::Behavior>, TransformError> {
         behaviors.iter().map(|behavior| self.behavior(behavior)).collect()
     }
 
-    fn behavior(&self, behavior: &Behavior) -> Result<avatar::Behavior, TransformError> {
+    fn behavior(&mut self, behavior: &Behavior) -> Result<avatar::Behavior, TransformError> {
         Ok(match behavior {
             Behavior::Drive(drive) => {
                 let (parameter, value) = self.drive(drive)?;
@@ -23,8 +29,65 @@ impl Context {
                     target: ParameterDriveTarget::Set { parameter, value },
                 })
             }
+            Behavior::ParameterDrive(target) => avatar::Behavior::ParameterDrive(ParameterDrive {
+                target: self.drive_target(target)?,
+            }),
             Behavior::TrackingControl(tracking) => avatar::Behavior::TrackingControl(tracking.clone()),
-            Behavior::Generic(generic) => avatar::Behavior::Generic(generic.clone()),
+            Behavior::Generic(generic) => avatar::Behavior::Generic(GenericStateBehavior {
+                type_name: self.externals.component_types.intern(generic.type_name.clone()),
+                fields: generic.fields.clone(),
+            }),
+        })
+    }
+
+    fn drive_target(&self, target: &ParameterDriveTarget<Declared>) -> Result<ParameterDriveTarget<Compiled>, TransformError> {
+        let parameters = &self.parameters;
+        Ok(match target {
+            ParameterDriveTarget::Set { parameter, value } => {
+                let resolved = parameters.resolve(parameter)?;
+                let value = cast(value, resolved.context).map_err(|error| error.or_at(parameter.at.as_ref()))?;
+                ParameterDriveTarget::Set { parameter: resolved, value }
+            }
+            ParameterDriveTarget::Add { parameter, value } => {
+                let resolved = parameters.resolve(parameter)?;
+                if !matches!(resolved.context, AnimatedValueType::Int | AnimatedValueType::Float) {
+                    return Err(TransformErrorKind::UnsupportedDrive {
+                        drive: "add",
+                        parameter: resolved.value,
+                        value_type: resolved.context,
+                    }
+                    .at(parameter.at.clone()));
+                }
+                let value = cast(value, resolved.context).map_err(|error| error.or_at(parameter.at.as_ref()))?;
+                ParameterDriveTarget::Add { parameter: resolved, value }
+            }
+            ParameterDriveTarget::RandomInt { parameter, range } => ParameterDriveTarget::RandomInt {
+                parameter: parameters.resolve_typed(parameter, AnimatedValueType::Int)?,
+                range: *range,
+            },
+            ParameterDriveTarget::RandomBool { parameter, chance } => ParameterDriveTarget::RandomBool {
+                parameter: parameters.resolve_typed(parameter, AnimatedValueType::Bool)?,
+                chance: *chance,
+            },
+            ParameterDriveTarget::RandomFloat { parameter, range } => ParameterDriveTarget::RandomFloat {
+                parameter: parameters.resolve_typed(parameter, AnimatedValueType::Float)?,
+                range: *range,
+            },
+            ParameterDriveTarget::Copy { from, to } => ParameterDriveTarget::Copy {
+                from: parameters.resolve(from)?,
+                to: parameters.resolve(to)?,
+            },
+            ParameterDriveTarget::RangedCopy {
+                from,
+                from_range,
+                to,
+                to_range,
+            } => ParameterDriveTarget::RangedCopy {
+                from: parameters.resolve(from)?,
+                from_range: *from_range,
+                to: parameters.resolve(to)?,
+                to_range: *to_range,
+            },
         })
     }
 
@@ -103,10 +166,13 @@ fn kind_mismatch(layer: &Unresolved<String>, expected: &'static str, found: &Lay
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use rstest::rstest;
 
     use super::*;
     use crate::{
+        core::external::Extern,
         core::resolution::Resolved,
         decl::{
             Avatar,
@@ -115,7 +181,7 @@ mod tests {
             layer::{GroupLayer, GroupOption, Layer, PuppetLayer, SwitchContent, SwitchLayer},
             parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue},
         },
-        unity::state::GenericStateBehavior,
+        unity::state::GenericValue,
         vrchat::playable_layer::PlayableLayer,
         vrchat::state_behaviour::{TrackingControl, TrackingControlMode, TrackingControlTarget},
     };
@@ -242,21 +308,23 @@ mod tests {
         let tracking = TrackingControl {
             values: [(TrackingControlTarget::Mouth, TrackingControlMode::Animation)].into(),
         };
-        let generic = GenericStateBehavior {
-            type_name: "Custom".into(),
-            fields: Default::default(),
-        };
-        let compiled = context()
+        let fields = BTreeMap::from([("goalWeight".to_owned(), GenericValue::Float(1.0))]);
+        let mut context = context();
+        let compiled = context
             .behaviors(&[
                 Behavior::TrackingControl(tracking.clone()),
                 Behavior::Drive(Drive::Switch {
                     layer: "Hat".to_owned().into(),
                     value: None,
                 }),
-                Behavior::Generic(generic.clone()),
+                Behavior::Generic(GenericStateBehavior {
+                    type_name: located("Custom", 7),
+                    fields: fields.clone(),
+                }),
             ])
             .unwrap();
 
+        let type_name = Extern::from_index(0);
         assert_eq!(
             compiled,
             vec![
@@ -267,8 +335,80 @@ mod tests {
                         value: AnimatedValue::Bool(true),
                     },
                 }),
-                avatar::Behavior::Generic(generic),
+                avatar::Behavior::Generic(GenericStateBehavior { type_name, fields }),
             ]
         );
+        let entry = context.externals.component_types.get(type_name);
+        assert_eq!(entry.value, "Custom");
+        assert_eq!(entry.referenced_at, vec![at(7)]);
+    }
+
+    #[rstest]
+    #[case::set(
+        ParameterDriveTarget::Set { parameter: located("Weight", 3), value: AnimatedValue::Int(1) },
+        ParameterDriveTarget::Set { parameter: resolved("Weight", AnimatedValueType::Float), value: AnimatedValue::Float(1.0) },
+    )]
+    #[case::add_int(
+        ParameterDriveTarget::Add { parameter: located("Emote", 3), value: AnimatedValue::Int(2) },
+        ParameterDriveTarget::Add { parameter: resolved("Emote", AnimatedValueType::Int), value: AnimatedValue::Int(2) },
+    )]
+    #[case::add_float(
+        ParameterDriveTarget::Add { parameter: located("Weight", 3), value: AnimatedValue::Int(-1) },
+        ParameterDriveTarget::Add { parameter: resolved("Weight", AnimatedValueType::Float), value: AnimatedValue::Float(-1.0) },
+    )]
+    #[case::random_int(
+        ParameterDriveTarget::RandomInt { parameter: located("Emote", 3), range: [0, 7] },
+        ParameterDriveTarget::RandomInt { parameter: resolved("Emote", AnimatedValueType::Int), range: [0, 7] },
+    )]
+    #[case::random_bool(
+        ParameterDriveTarget::RandomBool { parameter: located("Hat", 3), chance: 0.25 },
+        ParameterDriveTarget::RandomBool { parameter: resolved("Hat", AnimatedValueType::Bool), chance: 0.25 },
+    )]
+    #[case::random_float(
+        ParameterDriveTarget::RandomFloat { parameter: located("Wink", 3), range: [-1.0, 1.0] },
+        ParameterDriveTarget::RandomFloat { parameter: resolved("Wink", AnimatedValueType::Float), range: [-1.0, 1.0] },
+    )]
+    #[case::copy(
+        ParameterDriveTarget::Copy { from: located("Emote", 3), to: located("Weight", 3) },
+        ParameterDriveTarget::Copy { from: resolved("Emote", AnimatedValueType::Int), to: resolved("Weight", AnimatedValueType::Float) },
+    )]
+    #[case::ranged_copy(
+        ParameterDriveTarget::RangedCopy { from: located("Wink", 3), from_range: [-1.0, 1.0], to: located("Emote", 3), to_range: [0.0, 255.0] },
+        ParameterDriveTarget::RangedCopy {
+            from: resolved("Wink", AnimatedValueType::Float),
+            from_range: [-1.0, 1.0],
+            to: resolved("Emote", AnimatedValueType::Int),
+            to_range: [0.0, 255.0],
+        },
+    )]
+    fn state_drives_resolve_their_parameters(#[case] written: ParameterDriveTarget<Declared>, #[case] expected: ParameterDriveTarget<Compiled>) {
+        let compiled = context().behaviors(&[Behavior::ParameterDrive(written)]).unwrap();
+        assert_eq!(compiled, vec![avatar::Behavior::ParameterDrive(ParameterDrive { target: expected })]);
+    }
+
+    #[rstest]
+    #[case::add_bool(
+        ParameterDriveTarget::Add { parameter: located("Hat", 3), value: AnimatedValue::Bool(true) },
+        TransformErrorKind::UnsupportedDrive { drive: "add", parameter: "Hat".into(), value_type: AnimatedValueType::Bool },
+    )]
+    #[case::random_int_on_float(
+        ParameterDriveTarget::RandomInt { parameter: located("Wink", 3), range: [0, 1] },
+        TransformErrorKind::ParameterTypeMismatch { name: "Wink".into(), expected: AnimatedValueType::Int, found: AnimatedValueType::Float },
+    )]
+    #[case::random_bool_on_int(
+        ParameterDriveTarget::RandomBool { parameter: located("Emote", 3), chance: 0.5 },
+        TransformErrorKind::ParameterTypeMismatch { name: "Emote".into(), expected: AnimatedValueType::Bool, found: AnimatedValueType::Int },
+    )]
+    #[case::random_float_on_bool(
+        ParameterDriveTarget::RandomFloat { parameter: located("Hat", 3), range: [0.0, 1.0] },
+        TransformErrorKind::ParameterTypeMismatch { name: "Hat".into(), expected: AnimatedValueType::Float, found: AnimatedValueType::Bool },
+    )]
+    #[case::copy_from_nowhere(
+        ParameterDriveTarget::Copy { from: located("Missing", 3), to: located("Emote", 4) },
+        TransformErrorKind::UnknownParameter { name: "Missing".into() },
+    )]
+    fn a_bad_state_drive_is_reported_where_it_was_written(#[case] written: ParameterDriveTarget<Declared>, #[case] expected: TransformErrorKind) {
+        let error = context().behaviors(&[Behavior::ParameterDrive(written)]).unwrap_err();
+        assert_eq!(error, expected.at(Some(at(3))));
     }
 }

@@ -73,6 +73,12 @@ local da = {}
 --- What a raw state plays.
 ---@class da.Motion
 
+--- One keyframe of a keyed clip.
+---@class da.ClipKeyframe
+
+--- Bezier easing of a keyed clip segment.
+---@class da.Bezier
+
 --- Field of a blend tree placed on its axes.
 ---@class da.Field
 
@@ -110,8 +116,21 @@ local da = {}
 --- How a blend tree blends its fields. A `direct` tree weights each field by its own parameter.
 ---@alias da.BlendTreeType "linear"|"simple_2d"|"freeform_2d"|"cartesian_2d"|"direct"
 
+--- How a keyed clip segment moves from one keyframe to the next, besides `da.raw.bezier`.
+---@alias da.InterpolationName "constant"|"linear"
+
+--- How a keyed clip segment moves from one keyframe to the next.
+---@alias da.Interpolation da.InterpolationName|da.Bezier
+
 --- Value written for an animated property. A plain table of two to four numbers is a vector.
 ---@alias da.Value boolean|number|da.Vector|da.Color|da.Quaternion|number[]
+
+--- Value of a generic state behavior field: plain data only. A table with string keys is a map,
+--- a sequence is a list, and an empty table is an empty list. `false` is kept as a value here.
+---@alias da.GenericValue boolean|integer|number|string|da.GenericValue[]|table<string, da.GenericValue>
+
+--- Range written as two numbers, `{ min, max }`.
+---@alias da.Range da.Vector|[number, number]
 
 --- Vector of three components, written with `da.vec3` or as a plain table.
 ---@alias da.Vector3Value da.Vector|[number, number, number]
@@ -146,6 +165,7 @@ local da = {}
 ---@alias da.BehaviorList (da.Drive|da.Behavior|false)[]
 ---@alias da.GroupChildList (da.GroupDefault|da.GroupOption|false)[]
 ---@alias da.KeyframeList (da.Keyframe|false)[]
+---@alias da.ClipKeyframeList (da.ClipKeyframe|false)[]
 ---@alias da.RawChildList (da.State|da.Transition|false)[]
 ---@alias da.TransitionList (da.Transition|false)[]
 ---@alias da.ConditionList (da.Condition|false)[]
@@ -213,6 +233,21 @@ local da = {}
 ---@field speed_by? string
 ---@field time_by? string
 
+--- Playback of a keyed clip, together with the clip settings Unity keeps on the clip itself.
+---@class da.KeyedClipOptions: da.ClipOptions
+---@field length? number Seconds that normalized time 0 to 1 spans. Positive; defaults to 1.
+---@field loop_time? boolean Defaults to false.
+---@field loop_blend? boolean Defaults to false.
+---@field cycle_offset? number Defaults to 0.
+
+---@class da.ClipKeyframeOptions
+---@field interpolation? da.Interpolation How each target written here arrives from its previous keyframe. Defaults to `"linear"` for values that can be interpolated and `"constant"` for the others.
+
+--- Ranges of a ranged copy, written together.
+---@class da.CopyOptions
+---@field from_range? da.Range
+---@field to_range? da.Range
+
 --- A parametric tree blends along `x`, and a two dimensional one along `y` as well.
 --- A `direct` tree has neither.
 ---@class da.BlendTreeOptions
@@ -220,6 +255,8 @@ local da = {}
 ---@field x? string
 ---@field y? string
 
+--- Labels of the two ends of an axis. Only a two-axis puppet shows both; a four-axis
+--- direction shows `positive` alone, and a radial puppet shows neither.
 ---@class da.AxisOptions
 ---@field positive? string
 ---@field negative? string
@@ -228,6 +265,7 @@ local da = {}
 ---@field horizontal da.AxisValue
 ---@field vertical da.AxisValue
 
+--- Each direction shows the `positive` label of its axis; `negative` is an error.
 ---@class da.FourAxisOptions
 ---@field up da.AxisValue
 ---@field down da.AxisValue
@@ -348,18 +386,19 @@ function Renderer:enabled(enabled) end
 ---@return da.Target
 function Renderer:material(slot, asset) end
 
---- Material property such as `_Color`. A serialized field of the renderer itself
---- is written through `da.component(path, "UnityEngine.SkinnedMeshRenderer"):property(...)`.
+--- Material property such as `_Color`. Object references such as textures cannot be
+--- animated on a material property; swap the whole material with `:material` instead.
 ---@param name string
 ---@param value da.Value
 ---@return da.Target
 function Renderer:property(name, value) end
 
---- Material property that holds an object reference, such as a texture.
+--- Serialized field of the renderer itself, such as `m_UpdateWhenOffscreen`.
+--- Its type follows the value written for it, and `da.asset.*` writes an object reference.
 ---@param name string
----@param asset da.Asset
+---@param value da.Value|da.Asset
 ---@return da.Target
-function Renderer:reference(name, asset) end
+function Renderer:serialized(name, value) end
 
 --- GameObject bound to a path, from which targets are built.
 ---@class da.Object
@@ -482,11 +521,52 @@ function da.drive_int(parameter, value) end
 ---@return da.Drive
 function da.drive_float(parameter, value) end
 
+--- Adds to an int or float parameter. Like the other drives below, this only runs in a state,
+--- so it is a behavior and cannot trigger a menu item.
+---@param parameter string
+---@param value number
+---@return da.Behavior
+function da.drive_add(parameter, value) end
+
+--- Sets an int parameter to a random value between `min` and `max`, both included.
+---@param parameter string
+---@param min integer
+---@param max integer
+---@return da.Behavior
+function da.drive_random_int(parameter, min, max) end
+
+--- Sets a bool parameter to true with the given chance.
+---@param parameter string
+---@param chance? number Between 0 and 1. Defaults to 0.5.
+---@return da.Behavior
+function da.drive_random_bool(parameter, chance) end
+
+--- Sets a float parameter to a random value between `min` and `max`.
+---@param parameter string
+---@param min number
+---@param max number
+---@return da.Behavior
+function da.drive_random_float(parameter, min, max) end
+
+--- Copies one parameter into another. With both ranges written, `from_range` is mapped onto `to_range`.
+---@param from string
+---@param to string
+---@param options? da.CopyOptions
+---@return da.Behavior
+function da.drive_copy(from, to, options) end
+
 --- Hands the named parts over to animation, or back to tracking.
 ---@param mode da.TrackingMode
 ---@param targets da.TrackingTargetList
 ---@return da.Behavior
 function da.tracking(mode, targets) end
+
+--- State behavior of any other type, whose fields are written as plain data and applied as they are.
+--- Parameter names, object paths and assets inside the fields are not checked.
+---@param type_name string Fully qualified type name, looked up by the client like a component type.
+---@param fields? table<string, da.GenericValue>
+---@return da.Behavior
+function da.behavior(type_name, fields) end
 
 --------------------------------------------------------------------------------
 -- Layers
@@ -577,6 +657,7 @@ function da.toggle(name, drive) end
 ---@return da.MenuItem
 function da.button(name, drive) end
 
+--- Radial puppet. VRChat shows no labels on it, so `da.axis` given here takes no labels.
 ---@param name string
 ---@param axis da.AxisValue
 ---@return da.MenuItem
@@ -588,7 +669,7 @@ function da.radial(name, axis) end
 ---@return da.MenuItem
 function da.two_axis(name, axes) end
 
---- Four axis puppet. Every direction is named rather than ordered.
+--- Four axis puppet. Every direction is named rather than ordered, and shows one label.
 ---@param name string
 ---@param axes da.FourAxisOptions
 ---@return da.MenuItem
@@ -626,6 +707,9 @@ function da.raw.state(name, options, outgoing) end
 ---
 --- Inside a state the source is implied, so `from` is left out. A table in the second
 --- place is the options table, which is how the three argument forms are told apart.
+---
+--- With an empty condition list the transition leaves once the motion of its source state
+--- has played to the end (exit time 1).
 ---@param from da.StateValue
 ---@param to da.StateValue
 ---@param options da.TransitionOptions
@@ -642,6 +726,33 @@ function da.raw.transition(from, to, options, conditions) end
 ---@return da.Motion
 ---@overload fun(targets: da.TargetList): da.Motion
 function da.raw.clip(options, targets) end
+
+--- Clip whose targets follow curves through keyframes.
+---
+--- Keyframe times are normalized: 0 is the start of the clip and 1 is its end, and `length`
+--- says how many seconds that spans. Each target gets its own curve through the keyframes it
+--- is written in, which are ordered by time; a target written in no keyframe is not animated.
+---@param options da.KeyedClipOptions
+---@param keyframes da.ClipKeyframeList
+---@return da.Motion
+---@overload fun(keyframes: da.ClipKeyframeList): da.Motion
+function da.raw.keyed_clip(options, keyframes) end
+
+--- One keyframe of a keyed clip, at a normalized time between 0 and 1.
+---@param time number
+---@param options da.ClipKeyframeOptions
+---@param targets da.TargetList
+---@return da.ClipKeyframe
+---@overload fun(time: number, targets: da.TargetList): da.ClipKeyframe
+function da.raw.keyframe(time, options, targets) end
+
+--- Easing in the CSS `cubic-bezier` convention over one segment. `x1` and `x2` are between 0 and 1.
+---@param x1 number
+---@param y1 number
+---@param x2 number
+---@param y2 number
+---@return da.Bezier
+function da.raw.bezier(x1, y1, x2, y2) end
 
 --- Clip that already exists as a Unity asset. A bare name is looked up as a `UnityEngine.AnimationClip`.
 ---@param asset da.AssetValue

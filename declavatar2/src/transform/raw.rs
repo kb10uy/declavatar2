@@ -88,6 +88,10 @@ fn state_motion(context: &mut Context, motion: &raw::Motion) -> Result<(Motion, 
             Motion::Clip(Clip::Inline(InlineAnimation::Fixed(context.animation(animation)?))),
             playback(context, options)?,
         ),
+        raw::Motion::Keyed { options, animation } => (
+            Motion::Clip(Clip::Inline(InlineAnimation::Keyed(context.keyed_animation(animation)?))),
+            playback(context, options)?,
+        ),
         raw::Motion::External { asset, options } => (
             Motion::Clip(Clip::External(context.externals.assets.intern(asset.clone()))),
             playback(context, options)?,
@@ -125,6 +129,10 @@ fn nested_motion(context: &mut Context, motion: &raw::Motion) -> Result<(Motion,
     Ok(match motion {
         raw::Motion::Clip { options, animation } => (
             Motion::Clip(Clip::Inline(InlineAnimation::Fixed(context.animation(animation)?))),
+            nested(options)?,
+        ),
+        raw::Motion::Keyed { options, animation } => (
+            Motion::Clip(Clip::Inline(InlineAnimation::Keyed(context.keyed_animation(animation)?))),
             nested(options)?,
         ),
         raw::Motion::External { asset, options } => (Motion::Clip(Clip::External(context.externals.assets.intern(asset.clone()))), nested(options)?),

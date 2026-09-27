@@ -86,12 +86,14 @@ impl UserData for Renderer {
             let value = animated_value("da.renderer:property", &value)?;
             Ok(this.entry(lua, AnimatedRendererProperty::MaterialProperty { name }, value))
         });
-        methods.add_method("reference", |lua, this, (name, asset): (String, node::Asset)| {
-            Ok(this.entry(
-                lua,
-                AnimatedRendererProperty::MaterialProperty { name },
-                AnimatedValue::ObjectReference(located(lua, asset.0)),
-            ))
+        methods.add_method("serialized", |lua, this, (name, written): (String, Value)| {
+            let value = match &written {
+                Value::UserData(userdata) if userdata.is::<node::Asset>() => {
+                    AnimatedValue::ObjectReference(located(lua, node::Asset::from_lua(written.clone(), lua)?.0))
+                }
+                other => animated_value("da.renderer:serialized", other)?,
+            };
+            Ok(this.entry(lua, AnimatedRendererProperty::Serialized { name }, value))
         });
     }
 }
@@ -412,19 +414,34 @@ mod tests {
     }
 
     #[rstest]
-    fn a_renderer_reference_writes_an_object_reference_material_property() {
+    fn a_renderer_has_no_material_reference() {
+        let message = eval_error("da.renderer('Body'):reference('_MainTex', da.asset.guid('abc'))");
+        assert!(message.contains("reference"), "{message}");
+    }
+
+    #[rstest]
+    #[case::integer("2", AnimatedValue::Int(2))]
+    #[case::float("0.5", AnimatedValue::Float(0.5))]
+    #[case::boolean("false", AnimatedValue::Bool(false))]
+    #[case::vector("da.vec3(1, 2, 3)", AnimatedValue::Vector3(Vector3::new(1.0, 2.0, 3.0)))]
+    #[case::asset("da.asset.guid('m')", reference(AssetLocator::Guid("m".into())))]
+    fn a_renderer_serialized_field_takes_a_value_or_an_asset(#[case] written: &str, #[case] expected: AnimatedValue<Reference>) {
+        let expression = format!("da.renderer('Body', 'UnityEngine.MeshRenderer'):serialized('m_Field', {written})");
         assert_eq!(
-            key_of("da.renderer('Body'):reference('_MainTex', da.asset.guid('abc'))"),
+            key_of(&expression),
             renderer_key(
                 "Body",
-                DEFAULT_RENDERER_TYPE,
-                AnimatedRendererProperty::MaterialProperty { name: "_MainTex".into() },
+                "UnityEngine.MeshRenderer",
+                AnimatedRendererProperty::Serialized { name: "m_Field".into() },
             ),
         );
-        assert_eq!(
-            value_of("da.renderer('Body'):reference('_MainTex', da.asset.guid('abc'))"),
-            reference(AssetLocator::Guid("abc".into())),
-        );
+        assert_eq!(value_of(&expression), expected);
+    }
+
+    #[rstest]
+    fn a_renderer_serialized_field_rejects_a_bare_asset_name() {
+        let message = eval_error("da.renderer('Body'):serialized('m_Field', 'Eye')");
+        assert!(message.contains("da.renderer:serialized: a string cannot be animated"), "{message}");
     }
 
     #[rstest]
@@ -436,9 +453,9 @@ mod tests {
     fn references_preserve_explicit_locators(
         #[case] asset: &str,
         #[case] expected: AssetLocator,
-        #[values("da.renderer('Body')", "da.component('Body', 'ExampleComponent')")] receiver: &str,
+        #[values("da.renderer('Body'):serialized", "da.component('Body', 'ExampleComponent'):reference")] method: &str,
     ) {
-        let value = value_of(&format!("{receiver}:reference('Texture', {asset})"));
+        let value = value_of(&format!("{method}('Texture', {asset})"));
         let AnimatedValue::ObjectReference(actual) = value else {
             panic!("expected an object reference")
         };
@@ -453,8 +470,8 @@ mod tests {
     }
 
     #[rstest]
-    fn references_reject_bare_names(#[values("da.renderer('Body')", "da.component('Body', 'ExampleComponent')")] receiver: &str) {
-        let message = eval_error(&format!("{receiver}:reference('Texture', 'Eye')"));
+    fn references_reject_bare_names() {
+        let message = eval_error("da.component('Body', 'ExampleComponent'):reference('Texture', 'Eye')");
         assert!(message.contains("expected asset, got string"), "{message}");
         assert!(message.contains("test.lua:2:"), "{message}");
     }

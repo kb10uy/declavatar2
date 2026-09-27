@@ -123,7 +123,7 @@ mod definition_tests {
             behavior::{TRACKING_MODES, TRACKING_TARGETS},
             controller::{MERGE_MODES, PATH_MODES, PLAYABLE_LAYERS},
             parameter::{PROVIDED_GROUPS, SCOPES},
-            raw::{DIRECT_TREE_TYPE, PARAMETRIC_TREE_TYPES},
+            raw::{DIRECT_TREE_TYPE, INTERPOLATIONS, PARAMETRIC_TREE_TYPES},
         },
         runtime::create_runtime,
     };
@@ -249,6 +249,7 @@ mod definition_tests {
         assert_eq!(documented_alias(DECLAVATAR, "da.PlayableLayer"), accepted(PLAYABLE_LAYERS));
         assert_eq!(documented_alias(DECLAVATAR, "da.MergeMode"), accepted(MERGE_MODES));
         assert_eq!(documented_alias(DECLAVATAR, "da.PathMode"), accepted(PATH_MODES));
+        assert_eq!(documented_alias(DECLAVATAR, "da.InterpolationName"), accepted(INTERPOLATIONS));
 
         let mut tree_types = accepted(PARAMETRIC_TREE_TYPES);
         tree_types.insert(DIRECT_TREE_TYPE.to_owned());

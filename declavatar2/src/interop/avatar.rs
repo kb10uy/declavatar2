@@ -12,7 +12,8 @@ use super::{
 use crate::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, MenuAxis, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource, TransitionTarget,
+        DirectField, MenuAxis, MenuDirection, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
+        TransitionTarget,
     },
     core::{
         external::{Extern, ExternEntry, ExternKind, ExternTable},
@@ -24,15 +25,15 @@ use crate::{
         animation::{ClipAttributes, Curve, FixedAnimationEntry, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe},
         animator::{
             AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
-            AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterTypeDefault,
-            BlendTreeType, MergeMode, PathMode,
+            AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin,
+            AnimatorParameterTypeDefault, BlendTreeType, MergeMode, PathMode,
         },
         external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath},
         state::{GenericStateBehavior, GenericValue},
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
         playable_layer::PlayableLayer,
         state_behaviour::{ParameterDrive, ParameterDriveTarget, TrackingControl, TrackingControlMode, TrackingControlTarget},
     },
@@ -356,7 +357,7 @@ impl Decode for PlayableController {
 }
 
 wire_struct! {
-    AnimatorParameter { name, type_default }
+    AnimatorParameter { name, type_default, origin }
 }
 
 wire_enum! {
@@ -364,6 +365,16 @@ wire_enum! {
         0 Bool(default),
         1 Int(default),
         2 Float(default),
+    }
+
+    AnimatorParameterOrigin {
+        0 Declared,
+        1 Generated,
+        2 Provided(group),
+    }
+
+    ProvidedParameterGroup {
+        0 Vrchat,
     }
 }
 
@@ -784,7 +795,7 @@ wire_enum! {
 
 wire_struct! {
     ParameterDrive<Compiled> { target }
-    GenericStateBehavior { type_name, fields }
+    GenericStateBehavior<Compiled> { type_name, fields }
 }
 
 /// The wire order of tracking control targets, one byte each.
@@ -828,7 +839,7 @@ wire_enum! {
         0 SubMenu { name, items },
         1 Toggle { name, parameter, value },
         2 Button { name, parameter, value },
-        3 Radial { name, axis },
+        3 Radial { name, parameter },
         4 TwoAxis { name, horizontal, vertical },
         5 FourAxis { name, up, down, left, right },
     }
@@ -836,4 +847,5 @@ wire_enum! {
 
 wire_struct! {
     MenuAxis { parameter, positive, negative }
+    MenuDirection { parameter, label }
 }

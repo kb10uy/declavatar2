@@ -1,7 +1,10 @@
 use crate::{
-    core::resolution::{SourceLocation, Unresolved},
+    core::{
+        phase::Declared,
+        resolution::{SourceLocation, Unresolved},
+    },
     decl::behavior::{Animation, Behavior},
-    unity::{external::AssetLocator, value::AnimatedValue},
+    unity::{animation::KeyedAnimation, external::AssetLocator, value::AnimatedValue},
 };
 
 pub use crate::unity::animator::BlendTreeType;
@@ -44,6 +47,12 @@ pub enum Motion {
     Clip {
         options: ClipOptions,
         animation: Animation,
+    },
+
+    /// Clip generated from curves over normalized time.
+    Keyed {
+        options: ClipOptions,
+        animation: KeyedAnimation<Declared>,
     },
 
     /// Clip that already exists as a Unity asset.

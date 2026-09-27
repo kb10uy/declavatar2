@@ -1,7 +1,7 @@
 use crate::{
     core::{phase::Declared, resolution::Unresolved, value_set::ValueSet},
     unity::{animation::FixedAnimationEntry, state::GenericStateBehavior, value::AnimatedValue},
-    vrchat::state_behaviour::TrackingControl,
+    vrchat::state_behaviour::{ParameterDriveTarget, TrackingControl},
 };
 
 /// Set of animated targets and their values written in one place of the script.
@@ -26,8 +26,11 @@ pub enum Behavior {
     Drive(Drive),
     TrackingControl(TrackingControl),
 
+    /// Parameter drive that only a state can run, such as adding to a parameter or randomizing it.
+    ParameterDrive(ParameterDriveTarget<Declared>),
+
     /// State behavior of a type declavatar2 does not know about.
-    Generic(GenericStateBehavior),
+    Generic(GenericStateBehavior<Declared>),
 }
 
 /// Parameter drive written as `da.drive_*`.

@@ -1,6 +1,6 @@
 pub mod error;
 
-mod animation;
+pub(crate) mod animation;
 mod behavior;
 mod context;
 mod layer;

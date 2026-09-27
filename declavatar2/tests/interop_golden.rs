@@ -7,20 +7,20 @@ use std::{
 use declavatar2::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, MenuAxis, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
-        TransitionTarget,
+        DirectField, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
+        TransitionSource, TransitionTarget,
     },
     core::{Compiled, Extern, Resolved, SourceLocation, Unresolved, value_set::ValueSet},
     interop::{Diagnostic, DiagnosticStage, Diagnostics, decode_avatar, decode_diagnostics, encode_avatar, encode_diagnostics},
     unity::{
         AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
-        AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatedValue, AnimatedValueType, AnimatorParameter, Asset,
-        AssetLocator, BlendTreeType, ClipAttributes, ComponentType, Curve, Externals, FixedAnimationEntry, GenericStateBehavior, GenericValue, InlineAnimation,
-        Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe, MergeMode, ObjectPath, PathMode,
+        AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatedValue, AnimatedValueType, AnimatorParameter,
+        AnimatorParameterOrigin, Asset, AssetLocator, BlendTreeType, ClipAttributes, ComponentType, Curve, Externals, FixedAnimationEntry,
+        GenericStateBehavior, GenericValue, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe, MergeMode, ObjectPath, PathMode,
     },
     vrchat::{
         ParameterDrive, ParameterDriveTarget, PlayableLayer, TrackingControl, TrackingControlMode, TrackingControlTarget,
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
     },
 };
 use nalgebra::{Quaternion, UnitQuaternion, Vector2, Vector3, Vector4};
@@ -75,6 +75,7 @@ struct Refs {
     body: Extern<ObjectPath>,
     hat: Extern<ObjectPath>,
     light: Extern<ComponentType>,
+    layer_control: Extern<ComponentType>,
     material: Extern<Asset>,
     clip: Extern<Asset>,
     mask: Extern<Asset>,
@@ -89,6 +90,10 @@ fn externals() -> (Externals, Refs) {
     let light = externals
         .component_types
         .intern(Unresolved::located("UnityEngine.Light".into(), at("avatar.lua", 12)));
+    let layer_control = externals.component_types.intern(Unresolved::located(
+        "VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl".into(),
+        at("avatar.lua", 20),
+    ));
     let material = externals.assets.intern(Unresolved::located(
         AssetLocator::Named {
             asset_type: "UnityEngine.Material".into(),
@@ -107,6 +112,7 @@ fn externals() -> (Externals, Refs) {
             body,
             hat,
             light,
+            layer_control,
             material,
             clip,
             mask,
@@ -394,7 +400,7 @@ fn trees(refs: &Refs) -> Motion {
     }))
 }
 
-fn behaviors() -> Vec<Behavior> {
+fn behaviors(refs: &Refs) -> Vec<Behavior> {
     let drive = |target| Behavior::ParameterDrive(ParameterDrive { target });
     vec![
         drive(ParameterDriveTarget::Set {
@@ -435,7 +441,7 @@ fn behaviors() -> Vec<Behavior> {
             ]),
         }),
         Behavior::Generic(GenericStateBehavior {
-            type_name: "VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl".into(),
+            type_name: refs.layer_control,
             fields: BTreeMap::from([
                 ("blendDuration".to_string(), GenericValue::Float(0.5)),
                 ("debugString".to_string(), GenericValue::String(String::new())),
@@ -456,8 +462,8 @@ fn parameters() -> Vec<AnimatorParameter> {
         AnimatorParameter::create_bool("Hat", Some(true)),
         AnimatorParameter::create_float("Blend", None),
         AnimatorParameter::create_bool("顔", None),
-        AnimatorParameter::create_int("GestureLeft", None),
-        AnimatorParameter::create_float("Weight", Some(1.0)),
+        AnimatorParameter::create_int("GestureLeft", None).with_origin(AnimatorParameterOrigin::Provided(ProvidedParameterGroup::Vrchat)),
+        AnimatorParameter::create_float("Weight", Some(1.0)).with_origin(AnimatorParameterOrigin::Generated),
         AnimatorParameter::create_int("Big", Some(i32::MAX)),
         AnimatorParameter::create_int("Small", Some(i32::MIN)),
         AnimatorParameter::create_float("Tiny", Some(f32::MIN_POSITIVE)),
@@ -490,7 +496,7 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
                     false,
                     vec![],
                 ),
-                state("smile", Some(every_value_kind(refs)), Playback::default(), false, behaviors()),
+                state("smile", Some(every_value_kind(refs)), Playback::default(), false, behaviors(refs)),
             ],
             transitions: vec![
                 AnimatorTransition {
@@ -630,6 +636,10 @@ fn menu() -> Vec<MenuItem> {
         positive: positive.map(Into::into),
         negative: negative.map(Into::into),
     };
+    let direction = |name: &str, label: Option<&str>| MenuDirection {
+        parameter: float(name),
+        label: label.map(Into::into),
+    };
     vec![
         MenuItem::SubMenu {
             name: "Emotes".into(),
@@ -646,7 +656,7 @@ fn menu() -> Vec<MenuItem> {
                 },
                 MenuItem::Radial {
                     name: "Blend".into(),
-                    axis: axis("Blend", None, None),
+                    parameter: float("Blend"),
                 },
                 MenuItem::TwoAxis {
                     name: "Look".into(),
@@ -655,10 +665,10 @@ fn menu() -> Vec<MenuItem> {
                 },
                 MenuItem::FourAxis {
                     name: "Move".into(),
-                    up: axis("Blend", Some("Forward"), None),
-                    down: axis("Weight", None, Some("Back")),
-                    left: axis("Blend", None, None),
-                    right: axis("Weight", Some("R"), Some("L")),
+                    up: direction("Blend", Some("Forward")),
+                    down: direction("Weight", Some("Back")),
+                    left: direction("Blend", None),
+                    right: direction("Weight", Some("R")),
                 },
                 MenuItem::SubMenu {
                     name: "Empty".into(),

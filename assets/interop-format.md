@@ -14,7 +14,7 @@ Every blob starts with 16 bytes. All multi-byte integers in the whole blob are l
 |---|---|---|---|
 | 0 | 4 | `magic` | `"DA2a"` (`44 41 32 61`) for Avatar, `"DA2d"` (`44 41 32 64`) for Diagnostics |
 | 4 | 2 | `schema_version` | u16. Version of the encoding rules below. Currently `1`. |
-| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `1` for both kinds. |
+| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `2` for Avatar and `1` for Diagnostics. |
 | 8 | 4 | `reserved` | Zero. |
 | 12 | 4 | `payload_len` | u32. Number of bytes following the header. |
 | 16 | `payload_len` | `payload` | See the payload sections. |
@@ -93,7 +93,7 @@ AssetLocator: enum
   2 Named  : asset_type string, name string
 ```
 
-An `extern` anywhere in the body indexes the table of its kind: object paths, component types or assets. Indices are always in range for a blob the core produced; a reader still bounds-checks them.
+An `extern` anywhere in the body indexes the table of its kind: object paths, component types or assets. The component type table holds every Unity type name the body refers to: the component types of animated targets and the type names of generic state behaviors. The same entry can be referenced from both places. Indices are always in range for a blob the core produced; a reader still bounds-checks them.
 
 The object path table interns path strings independently of `path_mode`. The same index can therefore refer to different objects in absolute and relative controllers. The client resolves and caches objects by `(path_mode, index)`, against the avatar root for Absolute and the supplied root for Relative. It validates only combinations actually referenced by the body; a path used only in a relative controller need not exist under the avatar root. `needs_relative_root` requests the supplied root and does not require every path to resolve under both roots.
 
@@ -125,11 +125,15 @@ PlayableController:
   layers     : list<AnimatorLayer>
 
 AnimatorParameter:
-  name : string
-  kind : enum
+  name   : string
+  kind   : enum
     0 Bool  : default option<bool>
     1 Int   : default option<i32>
     2 Float : default option<f32>
+  origin : enum
+    0 Declared
+    1 Generated
+    2 Provided : group u8   0 VRChat
 
 AnimatorLayer:
   name          : string
@@ -164,6 +168,8 @@ Condition: enum
   4 Greater   : param, value f64
   5 Less      : param, value f64
 ```
+
+`origin` says who owns the parameter. `Declared` ones come from the `parameters` block and `Generated` ones are added by the transform, such as the weights of a blend layer; the avatar owns both. `Provided` ones are defined by the platform group they name and are only referenced.
 
 ### Motions
 
@@ -222,7 +228,7 @@ Segment:
   keyframe      : Keyframe
 
 Keyframe:
-  time  : f64
+  time  : f64                              (normalized time in [0, 1]; seconds are time × ClipAttributes.length)
   value : AnimatedValue
 ```
 
@@ -269,7 +275,7 @@ Where the model holds `AnimatedValue<()>` (menu controls and parameter drives), 
 Behavior: enum
   0 ParameterDrive  : target ParameterDriveTarget
   1 TrackingControl : modes u8 × 10
-  2 Generic         : type_name string, fields map<string, GenericValue>
+  2 Generic         : type_name extern (component type), fields map<string, GenericValue>
 
 ParameterDriveTarget: enum
   0 Set         : parameter param, value AnimatedValue
@@ -301,15 +307,21 @@ MenuItem: enum
   0 SubMenu  : name string, items list<MenuItem>
   1 Toggle   : name string, parameter param, value AnimatedValue
   2 Button   : name string, parameter param, value AnimatedValue
-  3 Radial   : name string, axis MenuAxis
+  3 Radial   : name string, parameter param
   4 TwoAxis  : name string, horizontal MenuAxis, vertical MenuAxis
-  5 FourAxis : name string, up MenuAxis, down MenuAxis, left MenuAxis, right MenuAxis
+  5 FourAxis : name string, up MenuDirection, down MenuDirection, left MenuDirection, right MenuDirection
 
 MenuAxis:
   parameter : param
   positive  : option<string>
   negative  : option<string>
+
+MenuDirection:
+  parameter : param
+  label     : option<string>
 ```
+
+Labels appear only where VRChat can show them: both ends of each two-axis axis, one label per four-axis direction, and none on a radial puppet.
 
 ## Diagnostics Payload
 

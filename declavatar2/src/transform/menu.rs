@@ -1,8 +1,11 @@
 use crate::{
-    avatar::menu::{MenuAxis, MenuItem},
+    avatar::{
+        controller::ParameterRef,
+        menu::{MenuAxis, MenuDirection, MenuItem},
+    },
     decl::{
         behavior::Drive,
-        menu::{self, Axis, AxisTarget},
+        menu::{self, Axis, AxisTarget, Direction},
     },
     transform::{
         behavior::drive_location,
@@ -62,9 +65,9 @@ fn item(context: &Context, item: &menu::MenuItem, errors: &mut Vec<TransformErro
                 value,
             }
         }
-        menu::MenuItem::Radial { name, axis } => MenuItem::Radial {
+        menu::MenuItem::Radial { name, target } => MenuItem::Radial {
             name: name.clone(),
-            axis: self::axis(context, axis)?,
+            parameter: axis_parameter(context, target)?,
         },
         menu::MenuItem::TwoAxis { name, axes } => MenuItem::TwoAxis {
             name: name.clone(),
@@ -73,16 +76,32 @@ fn item(context: &Context, item: &menu::MenuItem, errors: &mut Vec<TransformErro
         },
         menu::MenuItem::FourAxis { name, axes } => MenuItem::FourAxis {
             name: name.clone(),
-            up: axis(context, &axes.up)?,
-            down: axis(context, &axes.down)?,
-            left: axis(context, &axes.left)?,
-            right: axis(context, &axes.right)?,
+            up: direction(context, &axes.up)?,
+            down: direction(context, &axes.down)?,
+            left: direction(context, &axes.left)?,
+            right: direction(context, &axes.right)?,
         },
     })
 }
 
 fn axis(context: &Context, axis: &Axis) -> Result<MenuAxis, TransformError> {
-    let parameter = match &axis.target {
+    Ok(MenuAxis {
+        parameter: axis_parameter(context, &axis.target)?,
+        positive: axis.positive.clone(),
+        negative: axis.negative.clone(),
+    })
+}
+
+fn direction(context: &Context, direction: &Direction) -> Result<MenuDirection, TransformError> {
+    Ok(MenuDirection {
+        parameter: axis_parameter(context, &direction.target)?,
+        label: direction.label.clone(),
+    })
+}
+
+/// The float parameter a puppet control moves.
+fn axis_parameter(context: &Context, target: &AxisTarget) -> Result<ParameterRef, TransformError> {
+    Ok(match target {
         AxisTarget::Parameter(parameter) => context.parameters.resolve_typed(parameter, AnimatedValueType::Float)?,
         AxisTarget::Drive(Drive::Puppet { layer, value: None }) => {
             let info = context.layer(layer)?;
@@ -97,11 +116,6 @@ fn axis(context: &Context, axis: &Axis) -> Result<MenuAxis, TransformError> {
             context.parameters.resolve_typed(parameter, AnimatedValueType::Float)?
         }
         AxisTarget::Drive(drive) => return Err(TransformErrorKind::InvalidAxis.at(drive_location(drive).cloned())),
-    };
-    Ok(MenuAxis {
-        parameter,
-        positive: axis.positive.clone(),
-        negative: axis.negative.clone(),
     })
 }
 
@@ -111,7 +125,6 @@ mod tests {
 
     use super::*;
     use crate::{
-        avatar::controller::ParameterRef,
         core::resolution::{Resolved, Unresolved},
         decl::{
             Avatar,
@@ -207,10 +220,10 @@ mod tests {
             },
             menu::MenuItem::Radial {
                 name: "Wink".into(),
-                axis: Box::new(Axis::bare(AxisTarget::Drive(Drive::Puppet {
+                target: AxisTarget::Drive(Drive::Puppet {
                     layer: "Wink".to_owned().into(),
                     value: None,
-                }))),
+                }),
             },
             menu::MenuItem::SubMenu {
                 name: "More".into(),
@@ -244,11 +257,7 @@ mod tests {
                 },
                 MenuItem::Radial {
                     name: "Wink".into(),
-                    axis: MenuAxis {
-                        parameter: resolved("Wink", AnimatedValueType::Float),
-                        positive: None,
-                        negative: None,
-                    },
+                    parameter: resolved("Wink", AnimatedValueType::Float),
                 },
                 MenuItem::SubMenu {
                     name: "More".into(),
@@ -272,18 +281,17 @@ mod tests {
 
     #[rstest]
     fn a_four_axis_control_names_every_direction() {
-        let axis = |name: &str| Axis {
+        let direction = |name: &str| Direction {
             target: AxisTarget::Parameter("Move".to_owned().into()),
-            positive: Some(name.into()),
-            negative: None,
+            label: Some(name.into()),
         };
         let (compiled, errors) = run(vec![menu::MenuItem::FourAxis {
             name: "Move".into(),
             axes: Box::new(FourAxes {
-                up: axis("U"),
-                down: axis("D"),
-                left: axis("L"),
-                right: axis("R"),
+                up: direction("U"),
+                down: direction("D"),
+                left: direction("L"),
+                right: direction("R"),
             }),
         }]);
 
@@ -292,7 +300,7 @@ mod tests {
             panic!("expected a four-axis control");
         };
         assert_eq!(
-            [up, down, left, right].map(|axis| axis.positive.clone().unwrap()),
+            [up, down, left, right].map(|direction| direction.label.clone().unwrap()),
             ["U", "D", "L", "R"].map(str::to_owned)
         );
     }
@@ -315,10 +323,7 @@ mod tests {
         TransformErrorKind::LayerKindMismatch { name: "Hat".into(), expected: "puppet", found: "switch" },
     )]
     fn a_bad_axis_is_reported(#[case] target: AxisTarget, #[case] expected: TransformErrorKind) {
-        let (compiled, errors) = run(vec![menu::MenuItem::Radial {
-            name: "Bad".into(),
-            axis: Box::new(Axis::bare(target)),
-        }]);
+        let (compiled, errors) = run(vec![menu::MenuItem::Radial { name: "Bad".into(), target }]);
         assert!(compiled.is_empty());
         assert_eq!(errors, vec![expected.at(located_at(3))]);
     }

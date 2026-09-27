@@ -1,7 +1,7 @@
 use mlua::{Error as LuaError, FromLua, Lua, Result as LuaResult, Table, Value};
 
 use crate::{
-    decl::menu::{Axis, AxisTarget, FourAxes, MenuItem, TwoAxes},
+    decl::menu::{Axis, AxisTarget, Direction, FourAxes, MenuItem, TwoAxes},
     lua::{api::target::located, list, node, options::Options},
 };
 
@@ -76,7 +76,13 @@ fn button(_: &Lua, (name, drive): (String, node::Drive)) -> LuaResult<node::Menu
 }
 
 fn radial(_: &Lua, (name, axis): (String, AxisArgument)) -> LuaResult<node::MenuItem> {
-    Ok(node::MenuItem(MenuItem::Radial { name, axis: Box::new(axis.0) }))
+    let Axis { target, positive, negative } = axis.0;
+    if positive.is_some() || negative.is_some() {
+        return Err(LuaError::runtime(
+            "da.radial: a radial puppet shows no labels, so its axis takes neither `positive` nor `negative`",
+        ));
+    }
+    Ok(node::MenuItem(MenuItem::Radial { name, target }))
 }
 
 fn two_axis(_: &Lua, (name, table): (String, Table)) -> LuaResult<node::MenuItem> {
@@ -97,10 +103,10 @@ fn four_axis(_: &Lua, (name, table): (String, Table)) -> LuaResult<node::MenuIte
     const OWNER: &str = "da.four_axis";
 
     let mut options = Options::new(OWNER, Some(table));
-    let up = needed(OWNER, "up", options.take::<AxisArgument>("up")?)?;
-    let down = needed(OWNER, "down", options.take::<AxisArgument>("down")?)?;
-    let left = needed(OWNER, "left", options.take::<AxisArgument>("left")?)?;
-    let right = needed(OWNER, "right", options.take::<AxisArgument>("right")?)?;
+    let up = direction(OWNER, "up", options.take::<AxisArgument>("up")?)?;
+    let down = direction(OWNER, "down", options.take::<AxisArgument>("down")?)?;
+    let left = direction(OWNER, "left", options.take::<AxisArgument>("left")?)?;
+    let right = direction(OWNER, "right", options.take::<AxisArgument>("right")?)?;
     options.finish()?;
 
     Ok(node::MenuItem(MenuItem::FourAxis {
@@ -113,6 +119,17 @@ fn needed(owner: &'static str, label: &str, written: Option<AxisArgument>) -> Lu
     written
         .map(|axis| axis.0)
         .ok_or_else(|| LuaError::runtime(format!("{owner}: axis `{label}` is needed")))
+}
+
+/// One direction of a four-axis puppet, which shows the `positive` label of its axis and nothing else.
+fn direction(owner: &'static str, label: &str, written: Option<AxisArgument>) -> LuaResult<Direction> {
+    let Axis { target, positive, negative } = needed(owner, label, written)?;
+    if negative.is_some() {
+        return Err(LuaError::runtime(format!(
+            "{owner}: direction `{label}` shows one label, written as `positive`, so it takes no `negative`"
+        )));
+    }
+    Ok(Direction { target, label: positive })
 }
 
 #[cfg(test)]
@@ -185,40 +202,40 @@ mod tests {
     }
 
     #[rstest]
-    fn a_radial_axis_is_written_as_a_parameter_name() {
-        let MenuItem::Radial { axis, .. } = item_of("da.radial('Blend', 'BlendAmount')") else {
+    #[case::name("da.radial('Blend', 'BlendAmount')", parameter("BlendAmount"))]
+    #[case::bare_axis("da.radial('Blend', da.axis('BlendAmount'))", parameter("BlendAmount"))]
+    #[case::drive(
+        "da.radial('Wink', da.drive_puppet('Wink'))",
+        AxisTarget::Drive(Drive::Puppet { layer: Unresolved::new("Wink".into()), value: None }),
+    )]
+    fn a_radial_takes_what_it_moves(#[case] expression: &str, #[case] expected: AxisTarget) {
+        let MenuItem::Radial { target, .. } = item_of(expression) else {
             panic!("expected a radial");
         };
 
-        assert_eq!(axis.target, parameter("BlendAmount"));
-        assert_eq!(axis.positive, None);
-        assert_eq!(axis.negative, None);
+        assert_eq!(target, expected);
     }
 
     #[rstest]
-    fn a_radial_axis_is_written_as_a_puppet_drive() {
-        let MenuItem::Radial { axis, .. } = item_of("da.radial('Wink', da.drive_puppet('Wink'))") else {
-            panic!("expected a radial");
-        };
-
-        assert_eq!(
-            axis.target,
-            AxisTarget::Drive(Drive::Puppet {
-                layer: Unresolved::new("Wink".into()),
-                value: None,
-            }),
-        );
+    #[case::positive("{ positive = 'more' }")]
+    #[case::negative("{ negative = 'less' }")]
+    fn a_radial_takes_no_labels(#[case] labels: &str) {
+        let message = eval_error(&format!("da.radial('Blend', da.axis('BlendAmount', {labels}))"));
+        assert!(message.contains("da.radial: a radial puppet shows no labels"), "{message}");
+        assert!(message.contains("test.lua:2:"), "{message}");
     }
 
     #[rstest]
     fn an_axis_takes_the_labels_of_its_ends() {
-        let MenuItem::Radial { axis, .. } = item_of("da.radial('Wink', da.axis('WinkAmount', { positive = 'right', negative = 'left' }))") else {
-            panic!("expected a radial");
+        let MenuItem::TwoAxis { axes, .. } =
+            item_of("da.two_axis('Look', { horizontal = da.axis('LookX', { positive = 'right', negative = 'left' }), vertical = 'LookY' })")
+        else {
+            panic!("expected a two axis item");
         };
 
-        assert_eq!(axis.target, parameter("WinkAmount"));
-        assert_eq!(axis.positive.as_deref(), Some("right"));
-        assert_eq!(axis.negative.as_deref(), Some("left"));
+        assert_eq!(axes.horizontal.target, parameter("LookX"));
+        assert_eq!(axes.horizontal.positive.as_deref(), Some("right"));
+        assert_eq!(axes.horizontal.negative.as_deref(), Some("left"));
     }
 
     #[rstest]
@@ -244,6 +261,26 @@ mod tests {
         assert_eq!(axes.down.target, parameter("D"));
         assert_eq!(axes.left.target, parameter("L"));
         assert_eq!(axes.right.target, parameter("R"));
+        assert_eq!(axes.up.label, None);
+    }
+
+    #[rstest]
+    fn a_four_axis_direction_takes_its_label_from_positive() {
+        let MenuItem::FourAxis { axes, .. } =
+            item_of("da.four_axis('Move', { up = da.axis('U', { positive = 'Forward' }), down = 'D', left = 'L', right = 'R' })")
+        else {
+            panic!("expected a four axis item");
+        };
+
+        assert_eq!(axes.up.target, parameter("U"));
+        assert_eq!(axes.up.label.as_deref(), Some("Forward"));
+    }
+
+    #[rstest]
+    fn a_four_axis_direction_takes_no_negative_label() {
+        let message = eval_error("da.four_axis('Move', { up = 'U', down = da.axis('D', { negative = 'Back' }), left = 'L', right = 'R' })");
+        assert!(message.contains("da.four_axis: direction `down` shows one label"), "{message}");
+        assert!(message.contains("test.lua:2:"), "{message}");
     }
 
     #[rstest]

@@ -1,4 +1,4 @@
-use crate::{core::phase::Phase, unity::value::AnimatedValueType};
+use crate::{core::phase::Phase, unity::value::AnimatedValueType, vrchat::expr_parameter::ProvidedParameterGroup};
 
 pub trait Target {
     /// Returns the type hint for this target, if known.
@@ -184,6 +184,20 @@ pub enum PathMode {
 pub struct AnimatorParameter {
     pub name: String,
     pub type_default: AnimatorParameterTypeDefault,
+    pub origin: AnimatorParameterOrigin,
+}
+
+/// Where an animator parameter comes from, which tells the client whether the avatar owns it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AnimatorParameterOrigin {
+    /// Declared by the script.
+    Declared,
+
+    /// Added by the transform for its own use, such as the weights of a blend layer.
+    Generated,
+
+    /// Defined by the platform and only referenced by the avatar.
+    Provided(ProvidedParameterGroup),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -246,25 +260,29 @@ impl BlendTreeType {
     }
 }
 
+/// The `create_*` constructors make a declared parameter; `with_origin` changes where it comes from.
 impl AnimatorParameter {
     pub fn create_bool(name: impl Into<String>, default_value: Option<bool>) -> Self {
-        Self {
-            name: name.into(),
-            type_default: AnimatorParameterTypeDefault::Bool(default_value),
-        }
+        Self::declared(name, AnimatorParameterTypeDefault::Bool(default_value))
     }
 
     pub fn create_int(name: impl Into<String>, default_value: Option<i32>) -> Self {
-        Self {
-            name: name.into(),
-            type_default: AnimatorParameterTypeDefault::Int(default_value),
-        }
+        Self::declared(name, AnimatorParameterTypeDefault::Int(default_value))
     }
 
     pub fn create_float(name: impl Into<String>, default_value: Option<f32>) -> Self {
+        Self::declared(name, AnimatorParameterTypeDefault::Float(default_value))
+    }
+
+    pub fn with_origin(self, origin: AnimatorParameterOrigin) -> Self {
+        Self { origin, ..self }
+    }
+
+    fn declared(name: impl Into<String>, type_default: AnimatorParameterTypeDefault) -> Self {
         Self {
             name: name.into(),
-            type_default: AnimatorParameterTypeDefault::Float(default_value),
+            type_default,
+            origin: AnimatorParameterOrigin::Declared,
         }
     }
 }
@@ -285,6 +303,7 @@ mod tests {
             };
             assert_eq!(parameter.type_default, value);
             assert_eq!(parameter.name, "Test");
+            assert_eq!(parameter.origin, AnimatorParameterOrigin::Declared);
         }
         cases {
             bool_default: AnimatorParameterTypeDefault::Bool(_) => AnimatorParameterTypeDefault::Bool(Some(false)),

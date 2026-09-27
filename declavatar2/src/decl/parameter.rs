@@ -1,5 +1,7 @@
 use crate::core::resolution::SourceLocation;
 
+pub use crate::vrchat::expr_parameter::ProvidedParameterGroup;
+
 /// Entry of the `parameters` block.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Parameter {
@@ -40,10 +42,4 @@ pub enum ParameterScope {
 
     /// Animator-only parameter, not exported as an expression parameter.
     Internal,
-}
-
-/// Set of parameters that the platform defines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ProvidedParameterGroup {
-    Vrchat,
 }

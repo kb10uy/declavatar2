@@ -81,12 +81,13 @@ Lua script
 #### Animated Targets
 
 - Targets come from bound objects instead of a layer-level default mesh:
-    - `da.renderer(path[, type])` with `:shape(name[, value])`, `:material(slot, asset)`, `:property(name, value)`, `:reference(name, asset)`, `:enabled([bool])`.
+    - `da.renderer(path[, type])` with `:shape(name[, value])`, `:material(slot, asset)`, `:property(name, value)`, `:serialized(name, value)`, `:enabled([bool])`.
     - `da.object(path)` with `:active([bool])`, `:position(v)`, `:rotation(v)`, `:scale(v)`.
     - `da.component(path, type)` with `:enabled([bool])`, `:property(name, value)`, `:reference(name, asset)`.
     - `da.animator_parameter(name, value)` for AAPs; the referenced animator parameter must exist and have float type.
-- `:property` on a renderer writes a material property (`_Color` and such). A serialized field of the renderer itself is written through `da.component(path, "UnityEngine.SkinnedMeshRenderer"):property(...)`, which is the same path any other component takes.
-- `:reference` writes an object reference field and requires an explicit `da.asset.guid(...)`, `da.asset.path(...)` or `da.asset.named(type, name)` locator. A bare string is rejected because the asset type cannot be inferred.
+- `:property` on a renderer writes a material property (`_Color` and such). `:serialized` writes a serialized field of the renderer itself (`AnimatedRendererProperty::Serialized`).
+- A renderer has no `:reference`. Unity cannot animate an object reference held by a material property, so a texture swap would compile to a clip that does nothing; swapping the whole material with `:material` covers that need.
+- `Component:reference` writes an object reference field and requires an explicit `da.asset.guid(...)`, `da.asset.path(...)` or `da.asset.named(type, name)` locator. A bare string is rejected because the asset type cannot be inferred. `Renderer:serialized` takes such a locator in place of a value for the same purpose.
 - The value type of `:property` follows the Lua value: boolean is `Bool`, integer is `Int`, other numbers are `Float`, a vector is `Vector2`/`Vector3`/`Vector4`, `da.color` is `Color` and `da.quat` is `Quaternion`.
 - An omitted value means "full" (`1.0` / `true`); the consuming layer decides what "off" means.
 - A string given to `:material` is `AssetLocator::Named` with the type `UnityEngine.Material`. `da.asset.guid(...)`, `da.asset.path(...)`, `da.asset.named(type, name)` give explicit locators, and `da.asset.named` always takes the type. There is no assets block; `Externals` collects every reference.
@@ -96,9 +97,11 @@ Lua script
 #### State Behaviors
 
 - Parameter drives and tracking control stay typed, because the transform has to understand them: drives resolve layer references into concrete parameter values.
-- Any other state behavior is carried verbatim by `GenericStateBehavior`, which holds a type name and a tree of `GenericValue` (bool, integer, float, string, list, map). The transform passes it through untouched and the client feeds it to the actual component.
+- Drives that set a value (`da.drive_group`, `da.drive_switch`, `da.drive_puppet`, `da.drive_bool`, `da.drive_int`, `da.drive_float`) are `da.Drive` nodes, usable both in a state and on a menu item. Drives that only a state can run are `da.Behavior` nodes, so a menu item cannot take one: `da.drive_add(parameter, value)` (int or float parameter), `da.drive_random_int(parameter, min, max)`, `da.drive_random_bool(parameter[, chance])` (chance defaults to `0.5`), `da.drive_random_float(parameter, min, max)` and `da.drive_copy(from, to[, { from_range, to_range }])`, which becomes a ranged copy when both ranges are written. Their parameter types are checked in the 2nd pass.
+- Any other state behavior is written with `da.behavior(type_name[, fields])` and carried verbatim by `GenericStateBehavior`, which holds a type name and a tree of `GenericValue` (bool, integer, float, string, list, map). The transform passes the fields through untouched and the client feeds them to the actual component.
+- The type name goes through the component type `ExternTable`, like the type of `da.component`, so a type the client cannot find is reported at the line of `da.behavior`.
 - A generic payload holds plain data only. Parameter names, object paths and assets are not resolved or interned inside it, so it never takes part in reference checking.
-- The Lua builder for it is not exposed yet; only the data model exists.
+- In `fields`, a table with string keys is a map and a sequence is a list; an empty table is an empty list, and mixed or gapped tables are errors. `false` is a value here, not a dropped list entry.
 
 #### Controllers
 
@@ -125,7 +128,7 @@ Lua script
 - `da.puppet_layer(name, { driven_by }, { da.keyframe(t, targets), ... })`.
     - Compiles to one state holding a 1D linear blend tree, not a motion-time clip: each keyframe becomes a fixed clip placed at threshold `t`, so keyframes are joined with linear interpolation. `driven_by` must be a float, and `t` is any real value rather than normalized time, so a `-1..1` puppet axis is used as is.
     - A target missing from a keyframe is filled by linearly interpolating its neighbours, and held at the ends. Every generated clip writes the same key set.
-    - Step and Bezier interpolation are not exposed here. `da.raw.clip({ time_by }, targets)` still contains fixed targets; `time_by` controls playback and does not turn the targets into curves. Keyed curves currently exist only in the Rust animation model.
+    - Step and Bezier interpolation are not exposed here; write a `da.raw.keyed_clip` for them. `da.raw.clip({ time_by }, targets)` still contains fixed targets; `time_by` controls playback and does not turn the targets into curves.
 - `da.blend_layer(name, { da.puppet_layer(...), ... })` merges its children into one layer whose single state is a direct blend tree. Merging is explicit; layers written at the top level always stay separate.
     - Only layers that have no behaviors and are driven by a float can be merged, which is currently puppet layers only. Group and switch layers would need a float mirror of their parameter and are not accepted.
     - Each child becomes a direct field weighted by a float animator parameter fixed at `1.0`; the transform adds that parameter and it is not an expression parameter. The layer is Write Defaults on.
@@ -137,15 +140,21 @@ Lua script
 - `da.raw.layer(name, { default = state }, { states and/or transitions })`.
 - `da.raw.state(name, { motion, behaviors }, { outgoing transitions })`.
 - `da.raw.transition([from,] to[, opts], conditions)` with `duration`. `from` is implicit inside a state's child list and required in a layer's child list. Both forms compile to the same flat transition list.
+    - A transition with no conditions leaves once the source state's motion has played to the end. The model carries no exit time; the client sets exit time `1` on a condition-less transition.
     - Three arguments are ambiguous between `(from, to, conditions)` and `(to, opts, conditions)`. A table in the second position means the options table, a state reference means `to`. The contents of the table are never inspected.
 - State references (`default`, `from`, `to`) accept a name string or a state object. Forward references must be strings.
-- Motions: `da.raw.clip([opts,] targets)` with `speed`, `speed_by`, `time_by`; `da.raw.external(asset[, opts])`; `da.raw.blend_tree({ type, x[, y] }, { da.raw.field(position, motion), ... })` with `type` in `linear`, `simple_2d`, `freeform_2d`, `cartesian_2d`; `da.raw.blend_tree({ type = "direct" }, { da.raw.weighted(parameter, motion), ... })`. A direct tree accepts only weighted fields and the others only positioned fields.
+- Motions: `da.raw.clip([opts,] targets)` with `speed`, `speed_by`, `time_by`; `da.raw.keyed_clip([opts,] keyframes)`; `da.raw.external(asset[, opts])`; `da.raw.blend_tree({ type, x[, y] }, { da.raw.field(position, motion), ... })` with `type` in `linear`, `simple_2d`, `freeform_2d`, `cartesian_2d`; `da.raw.blend_tree({ type = "direct" }, { da.raw.weighted(parameter, motion), ... })`. A direct tree accepts only weighted fields and the others only positioned fields.
+- `da.raw.keyed_clip` takes the clip options plus `length`, `loop_time`, `loop_blend` and `cycle_offset` (`ClipAttributes`), and a list of `da.raw.keyframe(time[, { interpolation }], targets)`.
+    - Keyframe times are normalized time in `[0, 1]`, checked at the call site; `length` in seconds maps `1` onto the clip length.
+    - Keyframes are sorted by time, and each target gets its own curve through the keyframes it is written in. `interpolation` applies to the segment arriving at that keyframe, and is `"constant"`, `"linear"` or `da.raw.bezier(x1, y1, x2, y2)`; left out, it is linear for interpolable values and constant for the rest.
+    - Every curve is validated with `Curve::validate` in `da.raw.keyed_clip`, so a Bool with a linear segment or two keyframes of one target at the same time fail at the call site. The transform validates again and reports `InvalidCurve` at the target.
 - Conditions live under `da.raw.cond`: `zero`, `nonzero`, `eq`, `ne`, `gt`, `lt`. The comparison type comes from the parameter type in the 2nd pass; unsupported combinations such as `eq` on a float are errors.
 
 #### Menu
 
 - `da.submenu(name, items)`, `da.toggle(name, drive)`, `da.button(name, drive)`, `da.radial(name, axis)`, two-axis and four-axis puppets.
 - An axis is a parameter name, a `da.drive_puppet(...)`, or `da.axis(target, { positive, negative })` when labels are needed.
+- Labels are only accepted where VRChat shows them, and the models cannot hold the others. A two-axis puppet shows four labels, so both ends of both axes take one. A four-axis puppet shows one label per direction, written as `positive`; `negative` is an error. A radial puppet shows none, so it holds a bare parameter and a labelled `da.axis` is an error.
 - `da.two_axis(name, { horizontal, vertical })` and `da.four_axis(name, { up, down, left, right })` name their axes rather than ordering them, because four directions in a row read as a puzzle. Every axis is required and an unknown key is an error, as in any options table.
 - Drives: `da.drive_group(layer, option)`, `da.drive_switch(layer[, bool])`, `da.drive_puppet(layer[, value])`, `da.drive_bool(parameter, value)`, `da.drive_int(parameter, value)`, `da.drive_float(parameter, value)`.
 
@@ -187,6 +196,7 @@ return da.avatar({
     - Provided parameters are declared with their VRChat names (`AFK`, `VRMode`, ...) and take part in type checks like any other parameter, so a group layer can be driven by `GestureLeft`.
     - A group, switch or puppet layer whose `driven_by` is omitted follows the parameter named after the layer. The parameter must exist: group requires int, switch requires bool, and puppet requires float. No driver parameter is generated implicitly.
     - A blend layer generates one float parameter `{blend}/{child}` per child, fixed at `1.0`. A collision with an existing parameter is an error.
+    - Every animator parameter carries its origin: declared, generated, or provided by a named group (`VRChat`). A client registers only the declared and generated ones as parameters the avatar owns.
 - Layers
     - Group option indices are `1..n` in the written order, and the default state is index `0`. State names are `Default` and the option names.
     - A switch layer compiles to `Disabled` and `Enabled` with `Disabled` as the default state and one transition each way (`If` / `IfNot`). A toggle list whose entry cannot be zeroed (an object reference) is an error that asks for both sides.
@@ -196,11 +206,11 @@ return da.avatar({
     - Group and switch transitions have duration `0.0`. Raw transitions preserve the written `duration`, defaulting to `0.0`.
     - Write Defaults is on only for the generated state of a blend layer; group, switch, puppet and raw states use off. The raw Lua API does not expose a Write Defaults option.
 - Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
-- Not done yet: the Unity client, Lua/declaration support for keyed curves, and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
+- Not done yet: the Unity client and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
 
 ### Animation Model
 
-- `InlineAnimation` distinguishes fixed clips (`ValueSet<FixedAnimationEntry>`) from keyed clips (`KeyedAnimation`). The declaration model and transform currently generate fixed clips only, including each field of a puppet blend tree.
+- `InlineAnimation` distinguishes fixed clips (`ValueSet<FixedAnimationEntry>`) from keyed clips (`KeyedAnimation`). Group, switch and puppet layers generate fixed clips only, including each field of a puppet blend tree; keyed clips come from `da.raw.keyed_clip`.
 - A `Curve` is non-empty and stores the first keyframe separately, then an interpolation and destination keyframe for each segment. Validation requires strictly increasing normalized times in `[0, 1]` and one value type throughout.
 - Segment interpolation is `Constant`, `Linear` or `Bezier`. Constant accepts every value type; linear and Bezier require interpolable values. Bezier uses CSS-style control points with each x coordinate in `[0, 1]`.
 - `ClipAttributes.length` maps normalized time to seconds. Loop time, loop blend and cycle offset are clip attributes; state playback speed and parameter-controlled playback are separate settings.
@@ -230,7 +240,7 @@ return da.avatar({
 ### External References
 
 - v1 took a `Map<String, Asset>` ScriptableObject as compiler input. v2 reverses that: compilation needs nothing but the script and the symbols, and the resulting avatar enumerates what it requires.
-- `Externals` is that enumeration. Object paths, component types and assets each get an `ExternTable`, deduplicated, and the avatar body refers to them by index. Every entry carries `referenced_at`, so an unmet requirement is reported against the line that asked for it.
+- `Externals` is that enumeration. Object paths, component types and assets each get an `ExternTable`, deduplicated, and the avatar body refers to them by index. The component type table holds every Unity type name the client has to find, including the types of generic state behaviors. Every entry carries `referenced_at`, so an unmet requirement is reported against the line that asked for it.
 - `Externals.needs_relative_root` says whether any controller uses `PathMode::Relative`. It sits next to the tables because it is the same kind of request: something the client has to supply (the root object) before it can apply the avatar.
 - The client resolves the tables in index order and builds one array per kind, then reads the avatar body straight through it. No second compilation pass is involved. An object path is resolved against the avatar root or, for a relative controller, against the supplied root, so the same table entry may be looked up under both.
 - Resolving an asset is the client's job, as is checking that what it found matches the `asset_type` of a `Named` locator.

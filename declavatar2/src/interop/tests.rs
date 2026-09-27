@@ -16,7 +16,8 @@ use crate::{
     EvaluateOptions,
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Behavior, BlendTree, Clip, DirectBlendTree, DirectField,
-        MenuAxis, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource, TransitionTarget,
+        MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
+        TransitionTarget,
     },
     compile,
     core::{
@@ -30,15 +31,15 @@ use crate::{
         animation::{ClipAttributes, Curve, FixedAnimationEntry, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe},
         animator::{
             AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
-            AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterTypeDefault,
-            BlendTreeType, MergeMode, PathMode,
+            AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin,
+            AnimatorParameterTypeDefault, BlendTreeType, MergeMode, PathMode,
         },
         external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath},
         state::{GenericStateBehavior, GenericValue},
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
         playable_layer::PlayableLayer,
         state_behaviour::{ParameterDrive, ParameterDriveTarget, TrackingControl, TrackingControlMode, TrackingControlTarget},
     },
@@ -206,6 +207,13 @@ fn axis(positive: Option<&str>, negative: Option<&str>) -> MenuAxis {
     }
 }
 
+fn direction(label: Option<&str>) -> MenuDirection {
+    MenuDirection {
+        parameter: param("Float"),
+        label: label.map(Into::into),
+    }
+}
+
 fn state(name: &str, motion: Option<Motion>) -> AnimatorState {
     AnimatorState {
         name: name.into(),
@@ -292,6 +300,27 @@ enum_cases! {
         bool: AnimatorParameterTypeDefault::Bool(_) => AnimatorParameterTypeDefault::Bool(None),
         int: AnimatorParameterTypeDefault::Int(_) => AnimatorParameterTypeDefault::Int(Some(i32::MAX)),
         float: AnimatorParameterTypeDefault::Float(_) => AnimatorParameterTypeDefault::Float(Some(f32::MIN)),
+    }
+}
+
+enum_cases! {
+    fn animator_parameter_origins(value: AnimatorParameterOrigin) {
+        round_trip(AnimatorParameter::create_bool("Origin", None).with_origin(value));
+        round_trip(value);
+    }
+    cases {
+        declared: AnimatorParameterOrigin::Declared => AnimatorParameterOrigin::Declared,
+        generated: AnimatorParameterOrigin::Generated => AnimatorParameterOrigin::Generated,
+        provided: AnimatorParameterOrigin::Provided(_) => AnimatorParameterOrigin::Provided(ProvidedParameterGroup::Vrchat),
+    }
+}
+
+enum_cases! {
+    fn provided_parameter_groups(value: ProvidedParameterGroup) {
+        round_trip(value);
+    }
+    cases {
+        vrchat: ProvidedParameterGroup::Vrchat => ProvidedParameterGroup::Vrchat,
     }
 }
 
@@ -533,7 +562,7 @@ enum_cases! {
     cases {
         parameter_drive: Behavior::ParameterDrive(_) => Behavior::ParameterDrive(ParameterDrive { target: ParameterDriveTarget::Set { parameter: param("Int"), value: AnimatedValue::Int(1) } }),
         tracking_control: Behavior::TrackingControl(_) => Behavior::TrackingControl(TrackingControl { values: HashMap::from([(TrackingControlTarget::Head, TrackingControlMode::Animation), (TrackingControlTarget::Mouth, TrackingControlMode::Tracking)]) }),
-        generic: Behavior::Generic(_) => Behavior::Generic(GenericStateBehavior { type_name: "VRCAnimatorLayerControl".into(), fields: BTreeMap::from([("goalWeight".to_string(), GenericValue::Float(1.0))]) }),
+        generic: Behavior::Generic(_) => Behavior::Generic(GenericStateBehavior { type_name: component_ref(1), fields: BTreeMap::from([("goalWeight".to_string(), GenericValue::Float(1.0))]) }),
     }
 }
 
@@ -608,12 +637,12 @@ enum_cases! {
         round_trip(value);
     }
     cases {
-        sub_menu: MenuItem::SubMenu { .. } => MenuItem::SubMenu { name: "Emotes".into(), items: vec![MenuItem::Radial { name: "Blend".into(), axis: axis(None, None) }] },
+        sub_menu: MenuItem::SubMenu { .. } => MenuItem::SubMenu { name: "Emotes".into(), items: vec![MenuItem::Radial { name: "Blend".into(), parameter: param("Float") }] },
         toggle: MenuItem::Toggle { .. } => MenuItem::Toggle { name: "Hat".into(), parameter: param("Bool"), value: AnimatedValue::Bool(true) },
         button: MenuItem::Button { .. } => MenuItem::Button { name: "Wave".into(), parameter: param("Int"), value: AnimatedValue::Int(3) },
-        radial: MenuItem::Radial { .. } => MenuItem::Radial { name: "Blend".into(), axis: axis(Some("More"), None) },
+        radial: MenuItem::Radial { .. } => MenuItem::Radial { name: "Blend".into(), parameter: param("Float") },
         two_axis: MenuItem::TwoAxis { .. } => MenuItem::TwoAxis { name: "Look".into(), horizontal: axis(Some("Right"), Some("Left")), vertical: axis(None, Some("Down")) },
-        four_axis: MenuItem::FourAxis { .. } => MenuItem::FourAxis { name: "Move".into(), up: axis(None, None), down: axis(Some("D"), None), left: axis(None, Some("L")), right: axis(Some("R"), Some("R-")) },
+        four_axis: MenuItem::FourAxis { .. } => MenuItem::FourAxis { name: "Move".into(), up: direction(None), down: direction(Some("D")), left: direction(None), right: direction(Some("R")) },
     }
 }
 
