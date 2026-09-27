@@ -73,6 +73,12 @@ local da = {}
 --- What a raw state plays.
 ---@class da.Motion
 
+--- One keyframe of a keyed clip.
+---@class da.ClipKeyframe
+
+--- Bezier easing of a keyed clip segment.
+---@class da.Bezier
+
 --- Field of a blend tree placed on its axes.
 ---@class da.Field
 
@@ -110,8 +116,21 @@ local da = {}
 --- How a blend tree blends its fields. A `direct` tree weights each field by its own parameter.
 ---@alias da.BlendTreeType "linear"|"simple_2d"|"freeform_2d"|"cartesian_2d"|"direct"
 
+--- How a keyed clip segment moves from one keyframe to the next, besides `da.raw.bezier`.
+---@alias da.InterpolationName "constant"|"linear"
+
+--- How a keyed clip segment moves from one keyframe to the next.
+---@alias da.Interpolation da.InterpolationName|da.Bezier
+
 --- Value written for an animated property. A plain table of two to four numbers is a vector.
 ---@alias da.Value boolean|number|da.Vector|da.Color|da.Quaternion|number[]
+
+--- Value of a generic state behavior field: plain data only. A table with string keys is a map,
+--- a sequence is a list, and an empty table is an empty list. `false` is kept as a value here.
+---@alias da.GenericValue boolean|integer|number|string|da.GenericValue[]|table<string, da.GenericValue>
+
+--- Range written as two numbers, `{ min, max }`.
+---@alias da.Range da.Vector|[number, number]
 
 --- Vector of three components, written with `da.vec3` or as a plain table.
 ---@alias da.Vector3Value da.Vector|[number, number, number]
@@ -146,6 +165,7 @@ local da = {}
 ---@alias da.BehaviorList (da.Drive|da.Behavior|false)[]
 ---@alias da.GroupChildList (da.GroupDefault|da.GroupOption|false)[]
 ---@alias da.KeyframeList (da.Keyframe|false)[]
+---@alias da.ClipKeyframeList (da.ClipKeyframe|false)[]
 ---@alias da.RawChildList (da.State|da.Transition|false)[]
 ---@alias da.TransitionList (da.Transition|false)[]
 ---@alias da.ConditionList (da.Condition|false)[]
@@ -212,6 +232,21 @@ local da = {}
 ---@field speed? number
 ---@field speed_by? string
 ---@field time_by? string
+
+--- Playback of a keyed clip, together with the clip settings Unity keeps on the clip itself.
+---@class da.KeyedClipOptions: da.ClipOptions
+---@field length? number Seconds that normalized time 0 to 1 spans. Positive; defaults to 1.
+---@field loop_time? boolean Defaults to false.
+---@field loop_blend? boolean Defaults to false.
+---@field cycle_offset? number Defaults to 0.
+
+---@class da.ClipKeyframeOptions
+---@field interpolation? da.Interpolation How each target written here arrives from its previous keyframe. Defaults to `"linear"` for values that can be interpolated and `"constant"` for the others.
+
+--- Ranges of a ranged copy, written together.
+---@class da.CopyOptions
+---@field from_range? da.Range
+---@field to_range? da.Range
 
 --- A parametric tree blends along `x`, and a two dimensional one along `y` as well.
 --- A `direct` tree has neither.
@@ -688,6 +723,33 @@ function da.raw.transition(from, to, options, conditions) end
 ---@return da.Motion
 ---@overload fun(targets: da.TargetList): da.Motion
 function da.raw.clip(options, targets) end
+
+--- Clip whose targets follow curves through keyframes.
+---
+--- Keyframe times are normalized: 0 is the start of the clip and 1 is its end, and `length`
+--- says how many seconds that spans. Each target gets its own curve through the keyframes it
+--- is written in, which are ordered by time; a target written in no keyframe is not animated.
+---@param options da.KeyedClipOptions
+---@param keyframes da.ClipKeyframeList
+---@return da.Motion
+---@overload fun(keyframes: da.ClipKeyframeList): da.Motion
+function da.raw.keyed_clip(options, keyframes) end
+
+--- One keyframe of a keyed clip, at a normalized time between 0 and 1.
+---@param time number
+---@param options da.ClipKeyframeOptions
+---@param targets da.TargetList
+---@return da.ClipKeyframe
+---@overload fun(time: number, targets: da.TargetList): da.ClipKeyframe
+function da.raw.keyframe(time, options, targets) end
+
+--- Easing in the CSS `cubic-bezier` convention over one segment. `x1` and `x2` are between 0 and 1.
+---@param x1 number
+---@param y1 number
+---@param x2 number
+---@param y2 number
+---@return da.Bezier
+function da.raw.bezier(x1, y1, x2, y2) end
 
 --- Clip that already exists as a Unity asset. A bare name is looked up as a `UnityEngine.AnimationClip`.
 ---@param asset da.AssetValue

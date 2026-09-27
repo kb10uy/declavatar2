@@ -1,19 +1,23 @@
+use std::collections::BTreeMap;
+
 use declavatar2::{
     CompileError, EvaluateOptions,
     avatar::{
-        Avatar,
+        Avatar, Behavior,
         controller::{AnimatorCondition, Clip, Motion, TransitionSource, TransitionTarget},
-        menu::MenuItem,
+        menu::{MenuDirection, MenuItem},
     },
     compile,
     core::resolution::Resolved,
     unity::{
-        animation::InlineAnimation,
+        animation::{ClipAttributes, InlineAnimation, Interpolation},
         animator::{AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin, MergeMode, PathMode},
         external::AssetLocator,
+        state::GenericValue,
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
+        ParameterDrive, ParameterDriveTarget,
         expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
         playable_layer::PlayableLayer,
     },
@@ -272,6 +276,201 @@ return da.avatar({
     }
     let paths: Vec<_> = avatar.externals.object_paths.entries().iter().map(|entry| entry.value.clone()).collect();
     assert_eq!(paths, ["Hat"]);
+}
+
+const STATE_FEATURES: &str = r#"local da = require "declavatar"
+
+local Body = da.renderer("Body", "UnityEngine.MeshRenderer")
+
+return da.avatar({
+    parameters = {
+        da.provided("VRChat"),
+        da.int("Emote"),
+        da.float("Blend"),
+        da.bool("Coin", { scope = "internal" }),
+    },
+    controllers = {
+        da.controller("fx", {
+            da.raw.layer("Raw", {}, {
+                da.raw.state("Wave", {
+                    motion = da.raw.keyed_clip({ length = 2, loop_time = true }, {
+                        da.raw.keyframe(0, { Body:shape("smile", 0), Body:enabled(false) }),
+                        da.raw.keyframe(1, { interpolation = da.raw.bezier(0.25, 0, 0.75, 1) }, { Body:shape("smile", 1) }),
+                        da.raw.keyframe(0.5, { Body:enabled(true), Body:serialized("m_Quality", 2) }),
+                    }),
+                    behaviors = {
+                        da.drive_add("Emote", 1),
+                        da.drive_random_bool("Coin"),
+                        da.drive_copy("GestureLeftWeight", "Blend", { from_range = { 0, 1 }, to_range = { -1, 1 } }),
+                        da.behavior("VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl", { goalWeight = 1, layer = 3, blendableLayers = { true, false } }),
+                    },
+                }, {
+                    da.raw.transition("Wave", {}),
+                }),
+            }),
+            da.blend_layer("Face", {
+                da.puppet_layer("Brow", { driven_by = "Blend" }, { da.keyframe(0, { Body:shape("brow", 0) }), da.keyframe(1, { Body:shape("brow", 1) }) }),
+            }),
+        }),
+    },
+    menu = {
+        da.radial("Blend", "Blend"),
+        da.four_axis("Move", { up = da.axis("Blend", { positive = "Up" }), down = "Blend", left = "Blend", right = "Blend" }),
+    },
+})
+"#;
+
+#[rstest]
+fn state_features_compile_through_to_the_avatar() {
+    let avatar = compile(STATE_FEATURES, "avatar.lua", &EvaluateOptions::new()).expect("the script should compile");
+    let controller = &avatar.controllers[0].controller;
+
+    let origin = |name: &str| controller.parameters.iter().find(|parameter| parameter.name == name).unwrap().origin;
+    assert_eq!(origin("Emote"), AnimatorParameterOrigin::Declared);
+    assert_eq!(origin("Coin"), AnimatorParameterOrigin::Declared);
+    assert_eq!(origin("IsLocal"), VRCHAT);
+    assert_eq!(origin("Face/Brow"), AnimatorParameterOrigin::Generated);
+
+    let state = &controller.layers[0].states[0];
+    let Some(Motion::Clip(Clip::Inline(InlineAnimation::Keyed(keyed)))) = &state.motion else {
+        panic!("expected a keyed clip, got {:?}", state.motion);
+    };
+    assert_eq!(
+        keyed.attributes,
+        ClipAttributes {
+            length: 2.0,
+            loop_time: true,
+            ..ClipAttributes::default()
+        }
+    );
+    let curves: Vec<_> = keyed
+        .curves
+        .entries()
+        .map(|(key, entry)| {
+            let AnimatedTarget::Renderer(renderer) = key else {
+                panic!("expected a renderer target");
+            };
+            let segments: Vec<_> = entry
+                .curve
+                .rest
+                .iter()
+                .map(|(interpolation, keyframe)| (*interpolation, keyframe.time))
+                .collect();
+            (renderer.property.clone(), entry.curve.first.time, segments)
+        })
+        .collect();
+    assert_eq!(
+        curves,
+        vec![
+            (AnimatedRendererProperty::Enabled, 0.0, vec![(Interpolation::Constant, 0.5)]),
+            (
+                AnimatedRendererProperty::BlendShape { name: "smile".into() },
+                0.0,
+                vec![(
+                    Interpolation::Bezier {
+                        x1: 0.25,
+                        y1: 0.0,
+                        x2: 0.75,
+                        y2: 1.0
+                    },
+                    1.0
+                )]
+            ),
+            (AnimatedRendererProperty::Serialized { name: "m_Quality".into() }, 0.5, vec![]),
+        ]
+    );
+
+    let drives: Vec<_> = state
+        .behaviors
+        .iter()
+        .filter_map(|behavior| match behavior {
+            Behavior::ParameterDrive(ParameterDrive { target }) => Some(target.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        drives,
+        vec![
+            ParameterDriveTarget::Add {
+                parameter: Resolved::new("Emote".into(), AnimatedValueType::Int),
+                value: AnimatedValue::Int(1),
+            },
+            ParameterDriveTarget::RandomBool {
+                parameter: Resolved::new("Coin".into(), AnimatedValueType::Bool),
+                chance: 0.5,
+            },
+            ParameterDriveTarget::RangedCopy {
+                from: Resolved::new("GestureLeftWeight".into(), AnimatedValueType::Float),
+                from_range: [0.0, 1.0],
+                to: Resolved::new("Blend".into(), AnimatedValueType::Float),
+                to_range: [-1.0, 1.0],
+            },
+        ]
+    );
+
+    let Some(Behavior::Generic(generic)) = state.behaviors.last() else {
+        panic!("expected a generic behavior last");
+    };
+    let type_entry = avatar.externals.component_types.get(generic.type_name);
+    assert_eq!(type_entry.value, "VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl");
+    assert_eq!(type_entry.referenced_at.iter().map(|at| at.line).collect::<Vec<_>>(), [25]);
+    assert_eq!(
+        generic.fields,
+        BTreeMap::from([
+            (
+                "blendableLayers".to_owned(),
+                GenericValue::List(vec![GenericValue::Bool(true), GenericValue::Bool(false)])
+            ),
+            ("goalWeight".to_owned(), GenericValue::Int(1)),
+            ("layer".to_owned(), GenericValue::Int(3)),
+        ])
+    );
+
+    let blend = Resolved::new("Blend".to_owned(), AnimatedValueType::Float);
+    assert_eq!(
+        avatar.menu[0],
+        MenuItem::Radial {
+            name: "Blend".into(),
+            parameter: blend.clone(),
+        }
+    );
+    let MenuItem::FourAxis { up, down, .. } = &avatar.menu[1] else {
+        panic!("expected a four-axis control");
+    };
+    assert_eq!(
+        (up, down),
+        (
+            &MenuDirection {
+                parameter: blend.clone(),
+                label: Some("Up".into()),
+            },
+            &MenuDirection { parameter: blend, label: None },
+        )
+    );
+}
+
+#[rstest]
+fn state_drives_are_checked_against_their_parameters() {
+    let errors = errors_of(
+        r#"local da = require "declavatar"
+return da.avatar({
+    parameters = { da.bool("Hat"), da.int("Emote") },
+    controllers = {
+        da.controller("fx", {
+            da.raw.layer("Raw", {}, {
+                da.raw.state("Only", { behaviors = {
+                    da.drive_add("Hat", 1),
+                    da.drive_random_float("Emote", 0, 1),
+                    da.behavior("Missing.Behaviour"),
+                } }),
+            }),
+        }),
+    },
+})
+"#,
+    );
+
+    assert_eq!(errors, vec!["avatar.lua:8: `add` cannot be applied to parameter `Hat` of type Bool"]);
 }
 
 #[rstest]

@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
+
 use mlua::{Error as LuaError, FromLua, Lua, Result as LuaResult, Table, Value, Variadic};
 
 use crate::{
-    core::resolution::Unresolved,
+    core::{phase::Declared, resolution::Unresolved, value_set::ValueSet},
     decl::{
+        behavior::Animation,
         layer::Layer,
         raw::{
             BlendTree, BlendTreeField, BlendTreeType, ClipOptions, Condition, DirectBlendTree, DirectBlendTreeField, Motion, ParametricBlendTree, RawLayer,
@@ -15,9 +18,15 @@ use crate::{
         location::caller_location,
         node,
         options::{Options, one_of, with_children},
-        value::animated_value,
+        value::{StrictBoolean, animated_value},
     },
-    unity::value::AnimatedValue,
+    transform::animation::describe,
+    unity::{
+        animation::{ClipAttributes, Curve, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe},
+        animator::AnimatedTarget,
+        external::AssetLocator,
+        value::AnimatedValue,
+    },
 };
 
 const CLIP_TYPE: &str = "UnityEngine.AnimationClip";
@@ -31,12 +40,17 @@ pub(crate) const PARAMETRIC_TREE_TYPES: &[(&str, BlendTreeType)] = &[
 
 pub(crate) const DIRECT_TREE_TYPE: &str = "direct";
 
+pub(crate) const INTERPOLATIONS: &[(&str, Interpolation)] = &[("constant", Interpolation::Constant), ("linear", Interpolation::Linear)];
+
 pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
     let raw = lua.create_table()?;
     raw.set("layer", lua.create_function(layer)?)?;
     raw.set("state", lua.create_function(state)?)?;
     raw.set("transition", lua.create_function(transition)?)?;
     raw.set("clip", lua.create_function(clip)?)?;
+    raw.set("keyed_clip", lua.create_function(keyed_clip)?)?;
+    raw.set("keyframe", lua.create_function(keyframe)?)?;
+    raw.set("bezier", lua.create_function(bezier)?)?;
     raw.set("external", lua.create_function(external)?)?;
     raw.set("blend_tree", lua.create_function(blend_tree)?)?;
     raw.set("field", lua.create_function(field)?)?;
@@ -61,6 +75,17 @@ pub struct PendingTransition {
     pub to: Unresolved<String>,
     pub duration: Option<f64>,
     pub conditions: Vec<Condition>,
+}
+
+/// Keyframe of a keyed clip, which the clip splits into one curve per target.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PendingKeyframe {
+    pub time: f64,
+
+    /// How every target written here arrives from its previous keyframe, if it has one.
+    pub interpolation: Option<Interpolation>,
+
+    pub animation: Animation,
 }
 
 /// Reference to a state, written either as its name or as the state itself.
@@ -263,6 +288,138 @@ fn clip(lua: &Lua, arguments: Variadic<Value>) -> LuaResult<node::Motion> {
         options: clip_options,
         animation: content::animation(lua, OWNER, &targets)?,
     }))
+}
+
+fn keyed_clip(lua: &Lua, arguments: Variadic<Value>) -> LuaResult<node::Motion> {
+    const OWNER: &str = "da.raw.keyed_clip";
+
+    let mut arguments = arguments.into_iter();
+    let (table, keyframes) = match arguments.len() {
+        1 => (None, arguments.next().expect("one argument")),
+        2 => {
+            let Value::Table(options) = arguments.next().expect("two arguments") else {
+                return Err(LuaError::runtime(format!("{OWNER}: the first of two arguments is the options table")));
+            };
+            (Some(options), arguments.next().expect("two arguments"))
+        }
+        written => {
+            return Err(LuaError::runtime(format!("{OWNER}: expected one or two arguments, but {written} were written")));
+        }
+    };
+
+    let Value::Table(keyframes) = keyframes else {
+        return Err(LuaError::runtime(format!(
+            "{OWNER}: the last argument is the keyframe list, but {} was written",
+            node::describe(&keyframes)
+        )));
+    };
+
+    let mut options = Options::new(OWNER, table);
+    let clip_options = clip_options(lua, &mut options)?;
+    let defaults = ClipAttributes::default();
+    let attributes = ClipAttributes {
+        length: options.take::<f64>("length")?.unwrap_or(defaults.length),
+        loop_time: options.take::<StrictBoolean>("loop_time")?.map_or(defaults.loop_time, |value| value.0),
+        loop_blend: options.take::<StrictBoolean>("loop_blend")?.map_or(defaults.loop_blend, |value| value.0),
+        cycle_offset: options.take::<f64>("cycle_offset")?.unwrap_or(defaults.cycle_offset),
+    };
+    options.finish()?;
+    if !(attributes.length.is_finite() && attributes.length > 0.0) {
+        return Err(LuaError::runtime(format!(
+            "{OWNER}: a clip lasts a positive number of seconds, but `length` is {}",
+            attributes.length
+        )));
+    }
+
+    let mut keyframes: Vec<_> = list::collect::<node::ClipKeyframe>(lua, OWNER, &keyframes)?
+        .into_iter()
+        .map(node::ClipKeyframe::into_inner)
+        .collect();
+    keyframes.sort_by(|a, b| a.time.total_cmp(&b.time));
+
+    let mut curves: BTreeMap<AnimatedTarget<Declared>, Curve<Unresolved<AssetLocator>>> = BTreeMap::new();
+    for written in keyframes {
+        for (target, entry) in written.animation.entries() {
+            let keyframe = Keyframe {
+                time: written.time,
+                value: entry.value.clone(),
+            };
+            match curves.get_mut(target) {
+                Some(curve) => {
+                    let interpolation = written.interpolation.unwrap_or_else(|| natural_interpolation(&keyframe.value));
+                    curve.rest.push((interpolation, keyframe));
+                }
+                None => {
+                    curves.insert(entry.key.clone(), Curve::single(keyframe));
+                }
+            }
+        }
+    }
+
+    let mut entries = ValueSet::new();
+    for (key, curve) in curves {
+        curve
+            .validate()
+            .map_err(|error| LuaError::runtime(format!("{OWNER}: the curve of {} is invalid: {error}", describe(&key))))?;
+        entries.insert(KeyedAnimationEntry { key, curve });
+    }
+
+    Ok(node::Motion(Motion::Keyed {
+        options: clip_options,
+        animation: KeyedAnimation { attributes, curves: entries },
+    }))
+}
+
+/// Linear where the value can be interpolated, and a step where it cannot.
+fn natural_interpolation(value: &AnimatedValue<Unresolved<AssetLocator>>) -> Interpolation {
+    if value.value_type().is_interpolable() {
+        Interpolation::Linear
+    } else {
+        Interpolation::Constant
+    }
+}
+
+fn keyframe(lua: &Lua, (time, arguments): (f64, Variadic<Value>)) -> LuaResult<node::ClipKeyframe> {
+    const OWNER: &str = "da.raw.keyframe";
+
+    if !(0.0..=1.0).contains(&time) {
+        return Err(LuaError::runtime(format!(
+            "{OWNER}: a keyframe sits at normalized time between 0 and 1, but {time} was written"
+        )));
+    }
+
+    let (table, targets) = with_children(lua, OWNER, arguments)?;
+    let mut options = Options::new(OWNER, table);
+    let interpolation = options.take::<InterpolationArgument>("interpolation")?.map(|written| written.0);
+    options.finish()?;
+
+    Ok(node::ClipKeyframe(PendingKeyframe {
+        time,
+        interpolation,
+        animation: content::animation(lua, OWNER, &targets)?,
+    }))
+}
+
+fn bezier(_: &Lua, (x1, y1, x2, y2): (f64, f64, f64, f64)) -> LuaResult<node::Interpolation> {
+    let interpolation = Interpolation::Bezier { x1, y1, x2, y2 };
+    interpolation.validate().map_err(|error| LuaError::runtime(format!("da.raw.bezier: {error}")))?;
+    Ok(node::Interpolation(interpolation))
+}
+
+/// Interpolation written as its name or as `da.raw.bezier`.
+struct InterpolationArgument(Interpolation);
+
+impl FromLua for InterpolationArgument {
+    fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
+        match &value {
+            Value::String(name) => Ok(Self(one_of("da.raw.keyframe", "interpolation", &name.to_string_lossy(), INTERPOLATIONS)?)),
+            Value::UserData(userdata) if userdata.is::<node::Interpolation>() => Ok(Self(node::Interpolation::from_lua(value.clone(), lua)?.0)),
+            other => Err(LuaError::runtime(format!(
+                "expected an interpolation name or `da.raw.bezier`, got {}",
+                node::describe(other)
+            ))),
+        }
+    }
 }
 
 fn external(lua: &Lua, (asset, table): (AssetArgument, Option<Table>)) -> LuaResult<node::Motion> {
@@ -548,6 +705,110 @@ mod tests {
 
         assert_eq!(options, ClipOptions::default());
         assert_eq!(animation.entries().count(), 1);
+    }
+
+    fn keyed_of(expression: &str) -> (ClipOptions, KeyedAnimation<Declared>) {
+        let Motion::Keyed { options, animation } = motion_of(expression) else {
+            panic!("expected a keyed clip");
+        };
+        (options, animation)
+    }
+
+    fn segments(animation: &KeyedAnimation<Declared>) -> Vec<(f64, Vec<(Interpolation, f64)>)> {
+        animation
+            .curves
+            .entries()
+            .map(|(_, entry)| {
+                let rest = entry
+                    .curve
+                    .rest
+                    .iter()
+                    .map(|(interpolation, keyframe)| (*interpolation, keyframe.time))
+                    .collect();
+                (entry.curve.first.time, rest)
+            })
+            .collect()
+    }
+
+    #[rstest]
+    fn a_keyed_clip_splits_its_keyframes_into_one_curve_per_target() {
+        let (options, animation) = keyed_of(
+            "da.raw.keyed_clip({ speed = 2, length = 3, loop_time = true, loop_blend = true, cycle_offset = 0.5 }, {\
+             da.raw.keyframe(1, { interpolation = 'constant' }, { da.renderer('Face'):shape('smile', 1) }),\
+             da.raw.keyframe(0, { da.renderer('Face'):shape('smile', 0), da.object('Hat'):active(false) }),\
+             da.raw.keyframe(0.5, { da.object('Hat'):active(true) }),\
+             })",
+        );
+
+        assert_eq!(options.speed, Some(2.0));
+        assert_eq!(
+            animation.attributes,
+            ClipAttributes {
+                length: 3.0,
+                loop_time: true,
+                loop_blend: true,
+                cycle_offset: 0.5,
+            }
+        );
+        assert_eq!(
+            segments(&animation),
+            vec![(0.0, vec![(Interpolation::Constant, 0.5)]), (0.0, vec![(Interpolation::Constant, 1.0)]),]
+        );
+    }
+
+    #[rstest]
+    fn a_keyed_clip_bends_a_segment_where_the_value_allows_it() {
+        let (_, animation) = keyed_of(
+            "da.raw.keyed_clip {\
+             da.raw.keyframe(0, { da.renderer('Face'):shape('smile', 0) }),\
+             da.raw.keyframe(0.5, { interpolation = da.raw.bezier(0.1, 0, 0.9, 1) }, { da.renderer('Face'):shape('smile', 0.5) }),\
+             da.raw.keyframe(1, { da.renderer('Face'):shape('smile', 1) }),\
+             }",
+        );
+
+        assert_eq!(animation.attributes, ClipAttributes::default());
+        assert_eq!(
+            segments(&animation),
+            vec![(
+                0.0,
+                vec![
+                    (
+                        Interpolation::Bezier {
+                            x1: 0.1,
+                            y1: 0.0,
+                            x2: 0.9,
+                            y2: 1.0
+                        },
+                        0.5
+                    ),
+                    (Interpolation::Linear, 1.0),
+                ]
+            )]
+        );
+    }
+
+    #[rstest]
+    #[case::time_out_of_range("da.raw.keyframe(1.5, {})", "normalized time between 0 and 1, but 1.5 was written")]
+    #[case::control_point("da.raw.bezier(1.5, 0, 0.5, 1)", "bezier control point x 1.5 is out of range")]
+    #[case::unknown_interpolation("da.raw.keyframe(0, { interpolation = 'cubic' }, {})", "interpolation `cubic` is not known")]
+    #[case::length("da.raw.keyed_clip({ length = 0 }, {})", "`length` is 0")]
+    #[case::linear_bool(
+        "da.raw.keyed_clip { da.raw.keyframe(0, { da.object('Hat'):active(false) }), da.raw.keyframe(1, { interpolation = 'linear' }, { da.object('Hat'):active() }) }",
+        "the curve of `Hat` active is invalid: Linear interpolation cannot be applied to Bool values"
+    )]
+    #[case::same_time(
+        "da.raw.keyed_clip { da.raw.keyframe(0.5, { da.object('Hat'):active(false) }), da.raw.keyframe(0.5, { da.object('Hat'):active() }) }",
+        "does not increase from previous 0.5"
+    )]
+    #[case::mixed_types(
+        "da.raw.keyed_clip { da.raw.keyframe(0, { da.renderer('Face'):property('_X', 1) }), da.raw.keyframe(1, { da.renderer('Face'):property('_X', 0.5) }) }",
+        "expected Int value but found Float"
+    )]
+    #[case::puppet_keyframe("da.raw.keyed_clip { da.keyframe(0, {}) }", "expected clip keyframe, got keyframe")]
+    fn a_bad_keyed_clip_is_rejected_where_it_is_written(#[case] expression: &str, #[case] expected: &str) {
+        let message = eval_error(expression);
+        assert!(message.contains(expected), "{message}");
+        assert!(message.contains("test.lua:2:"), "{message}");
     }
 
     #[rstest]

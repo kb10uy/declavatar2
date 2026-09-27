@@ -128,7 +128,7 @@ Lua script
 - `da.puppet_layer(name, { driven_by }, { da.keyframe(t, targets), ... })`.
     - Compiles to one state holding a 1D linear blend tree, not a motion-time clip: each keyframe becomes a fixed clip placed at threshold `t`, so keyframes are joined with linear interpolation. `driven_by` must be a float, and `t` is any real value rather than normalized time, so a `-1..1` puppet axis is used as is.
     - A target missing from a keyframe is filled by linearly interpolating its neighbours, and held at the ends. Every generated clip writes the same key set.
-    - Step and Bezier interpolation are not exposed here. `da.raw.clip({ time_by }, targets)` still contains fixed targets; `time_by` controls playback and does not turn the targets into curves. Keyed curves currently exist only in the Rust animation model.
+    - Step and Bezier interpolation are not exposed here; write a `da.raw.keyed_clip` for them. `da.raw.clip({ time_by }, targets)` still contains fixed targets; `time_by` controls playback and does not turn the targets into curves.
 - `da.blend_layer(name, { da.puppet_layer(...), ... })` merges its children into one layer whose single state is a direct blend tree. Merging is explicit; layers written at the top level always stay separate.
     - Only layers that have no behaviors and are driven by a float can be merged, which is currently puppet layers only. Group and switch layers would need a float mirror of their parameter and are not accepted.
     - Each child becomes a direct field weighted by a float animator parameter fixed at `1.0`; the transform adds that parameter and it is not an expression parameter. The layer is Write Defaults on.
@@ -140,9 +140,14 @@ Lua script
 - `da.raw.layer(name, { default = state }, { states and/or transitions })`.
 - `da.raw.state(name, { motion, behaviors }, { outgoing transitions })`.
 - `da.raw.transition([from,] to[, opts], conditions)` with `duration`. `from` is implicit inside a state's child list and required in a layer's child list. Both forms compile to the same flat transition list.
+    - A transition with no conditions leaves once the source state's motion has played to the end. The model carries no exit time; the client sets exit time `1` on a condition-less transition.
     - Three arguments are ambiguous between `(from, to, conditions)` and `(to, opts, conditions)`. A table in the second position means the options table, a state reference means `to`. The contents of the table are never inspected.
 - State references (`default`, `from`, `to`) accept a name string or a state object. Forward references must be strings.
-- Motions: `da.raw.clip([opts,] targets)` with `speed`, `speed_by`, `time_by`; `da.raw.external(asset[, opts])`; `da.raw.blend_tree({ type, x[, y] }, { da.raw.field(position, motion), ... })` with `type` in `linear`, `simple_2d`, `freeform_2d`, `cartesian_2d`; `da.raw.blend_tree({ type = "direct" }, { da.raw.weighted(parameter, motion), ... })`. A direct tree accepts only weighted fields and the others only positioned fields.
+- Motions: `da.raw.clip([opts,] targets)` with `speed`, `speed_by`, `time_by`; `da.raw.keyed_clip([opts,] keyframes)`; `da.raw.external(asset[, opts])`; `da.raw.blend_tree({ type, x[, y] }, { da.raw.field(position, motion), ... })` with `type` in `linear`, `simple_2d`, `freeform_2d`, `cartesian_2d`; `da.raw.blend_tree({ type = "direct" }, { da.raw.weighted(parameter, motion), ... })`. A direct tree accepts only weighted fields and the others only positioned fields.
+- `da.raw.keyed_clip` takes the clip options plus `length`, `loop_time`, `loop_blend` and `cycle_offset` (`ClipAttributes`), and a list of `da.raw.keyframe(time[, { interpolation }], targets)`.
+    - Keyframe times are normalized time in `[0, 1]`, checked at the call site; `length` in seconds maps `1` onto the clip length.
+    - Keyframes are sorted by time, and each target gets its own curve through the keyframes it is written in. `interpolation` applies to the segment arriving at that keyframe, and is `"constant"`, `"linear"` or `da.raw.bezier(x1, y1, x2, y2)`; left out, it is linear for interpolable values and constant for the rest.
+    - Every curve is validated with `Curve::validate` in `da.raw.keyed_clip`, so a Bool with a linear segment or two keyframes of one target at the same time fail at the call site. The transform validates again and reports `InvalidCurve` at the target.
 - Conditions live under `da.raw.cond`: `zero`, `nonzero`, `eq`, `ne`, `gt`, `lt`. The comparison type comes from the parameter type in the 2nd pass; unsupported combinations such as `eq` on a float are errors.
 
 #### Menu
@@ -201,11 +206,11 @@ return da.avatar({
     - Group and switch transitions have duration `0.0`. Raw transitions preserve the written `duration`, defaulting to `0.0`.
     - Write Defaults is on only for the generated state of a blend layer; group, switch, puppet and raw states use off. The raw Lua API does not expose a Write Defaults option.
 - Menu: a menu holds at most 8 controls. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
-- Not done yet: the Unity client, Lua/declaration support for keyed curves, and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
+- Not done yet: the Unity client and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
 
 ### Animation Model
 
-- `InlineAnimation` distinguishes fixed clips (`ValueSet<FixedAnimationEntry>`) from keyed clips (`KeyedAnimation`). The declaration model and transform currently generate fixed clips only, including each field of a puppet blend tree.
+- `InlineAnimation` distinguishes fixed clips (`ValueSet<FixedAnimationEntry>`) from keyed clips (`KeyedAnimation`). Group, switch and puppet layers generate fixed clips only, including each field of a puppet blend tree; keyed clips come from `da.raw.keyed_clip`.
 - A `Curve` is non-empty and stores the first keyframe separately, then an interpolation and destination keyframe for each segment. Validation requires strictly increasing normalized times in `[0, 1]` and one value type throughout.
 - Segment interpolation is `Constant`, `Linear` or `Bezier`. Constant accepts every value type; linear and Bezier require interpolable values. Bezier uses CSS-style control points with each x coordinate in `[0, 1]`.
 - `ClipAttributes.length` maps normalized time to seconds. Loop time, loop blend and cycle offset are clip attributes; state playback speed and parameter-controlled playback are separate settings.

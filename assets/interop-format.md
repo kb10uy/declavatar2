@@ -228,7 +228,7 @@ Segment:
   keyframe      : Keyframe
 
 Keyframe:
-  time  : f64
+  time  : f64                              (normalized time in [0, 1]; seconds are time × ClipAttributes.length)
   value : AnimatedValue
 ```
 

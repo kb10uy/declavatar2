@@ -5,7 +5,10 @@ use std::{
 
 use thiserror::Error;
 
-use crate::{core::resolution::SourceLocation, unity::value::AnimatedValueType};
+use crate::{
+    core::resolution::SourceLocation,
+    unity::{animation::CurveError, value::AnimatedValueType},
+};
 
 /// One thing the transform could not accept, and where in the script it was written.
 #[derive(Debug, Clone, PartialEq)]
@@ -156,6 +159,9 @@ pub enum TransformErrorKind {
 
     #[error("a {expected:?} value is needed here, but a {found:?} value was written")]
     ValueTypeMismatch { expected: AnimatedValueType, found: AnimatedValueType },
+
+    #[error("the curve of {target} is invalid: {error}")]
+    InvalidCurve { target: String, error: CurveError },
 
     #[error("`{option}` can only be set on the motion of a state, not on a field of a blend tree")]
     NestedPlayback { option: &'static str },

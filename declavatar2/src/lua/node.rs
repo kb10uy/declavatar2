@@ -95,6 +95,12 @@ declare_nodes! {
     /// What a raw state plays.
     "motion" => Motion(decl::raw::Motion),
 
+    /// One keyframe of a keyed clip, written with `da.raw.keyframe`.
+    "clip keyframe" => ClipKeyframe(crate::lua::api::raw::PendingKeyframe),
+
+    /// How a keyed clip reaches a keyframe, written with `da.raw.bezier`.
+    "interpolation" => Interpolation(crate::unity::animation::Interpolation),
+
     /// Field of a blend tree placed on its axes.
     "field" => BlendTreeField(decl::raw::BlendTreeField),
 

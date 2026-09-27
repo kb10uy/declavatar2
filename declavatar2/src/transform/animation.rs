@@ -5,9 +5,12 @@ use crate::{
         value_set::ValueSet,
     },
     decl::behavior::Animation,
-    transform::{context::Context, error::TransformError},
+    transform::{
+        context::Context,
+        error::{TransformError, TransformErrorKind},
+    },
     unity::{
-        animation::FixedAnimationEntry,
+        animation::{Curve, FixedAnimationEntry, KeyedAnimation, KeyedAnimationEntry, Keyframe},
         animator::{
             AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
             AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget,
@@ -63,6 +66,52 @@ impl Context {
         }
         Ok(compiled)
     }
+
+    /// Compiles a keyed clip, checking every curve the way `Curve::validate` does.
+    pub fn keyed_animation(&mut self, animation: &KeyedAnimation<Declared>) -> Result<KeyedAnimation<Compiled>, TransformError> {
+        let mut curves = ValueSet::new();
+        for (_, entry) in animation.curves.entries() {
+            entry.curve.validate().map_err(|error| {
+                TransformErrorKind::InvalidCurve {
+                    target: describe(&entry.key),
+                    error,
+                }
+                .at(target_location(&entry.key))
+            })?;
+            let key = self.target(&entry.key)?;
+            let mut keyframe = |written: &Keyframe<Unresolved<AssetLocator>>| Keyframe {
+                time: written.time,
+                value: self.value(&written.value),
+            };
+            let first = keyframe(&entry.curve.first);
+            let rest = entry
+                .curve
+                .rest
+                .iter()
+                .map(|(interpolation, written)| (*interpolation, keyframe(written)))
+                .collect();
+            curves.insert(KeyedAnimationEntry {
+                key,
+                curve: Curve { first, rest },
+            });
+        }
+        Ok(KeyedAnimation {
+            attributes: animation.attributes,
+            curves,
+        })
+    }
+}
+
+/// Where a target was written, taken from the reference it holds.
+fn target_location(target: &AnimatedTarget<Declared>) -> Option<crate::core::resolution::SourceLocation> {
+    match target {
+        AnimatedTarget::AnimatorSelf(animator) => match &animator.property {
+            AnimatedAnimatorProperty::ParameterFloatValue { name } => name.at.clone(),
+        },
+        AnimatedTarget::GameObject(object) => object.path.at.clone(),
+        AnimatedTarget::Renderer(renderer) => renderer.path.at.clone(),
+        AnimatedTarget::Component(component) => component.path.at.clone(),
+    }
 }
 
 /// Names a target the way a script writer would recognize it, for error messages.
@@ -114,6 +163,7 @@ mod tests {
         decl::Avatar,
         decl::parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue},
         transform::error::TransformErrorKind,
+        unity::animation::{CurveError, Interpolation},
     };
 
     fn at(line: u32) -> SourceLocation {
@@ -233,6 +283,69 @@ mod tests {
         assert_eq!(context.externals.assets.get(asset).value, locator);
         assert_eq!(context.externals.assets.get(asset).referenced_at, vec![at(4)]);
         assert_eq!(context.value(&AnimatedValue::Float(0.5)), AnimatedValue::Float(0.5));
+    }
+
+    fn keyed(curve: Curve<Unresolved<AssetLocator>>) -> KeyedAnimation<Declared> {
+        KeyedAnimation {
+            attributes: crate::unity::animation::ClipAttributes::default(),
+            curves: ValueSet::from([KeyedAnimationEntry {
+                key: shape("Face", "smile", 6),
+                curve,
+            }]),
+        }
+    }
+
+    fn key(time: f64, value: f64) -> Keyframe<Unresolved<AssetLocator>> {
+        Keyframe {
+            time,
+            value: AnimatedValue::Float(value),
+        }
+    }
+
+    #[rstest]
+    fn a_keyed_clip_interns_its_targets_and_keeps_its_curves() {
+        let mut context = context();
+        let compiled = context
+            .keyed_animation(&keyed(Curve {
+                first: key(0.0, 0.0),
+                rest: vec![(Interpolation::Linear, key(1.0, 1.0))],
+            }))
+            .unwrap();
+
+        let (key, entry) = compiled.curves.entries().next().expect("one curve");
+        let AnimatedTarget::Renderer(renderer) = key else {
+            panic!("a renderer target should stay one");
+        };
+        assert_eq!(context.externals.object_paths.get(renderer.path).referenced_at, vec![at(6)]);
+        assert_eq!(
+            entry.curve.rest,
+            vec![(
+                Interpolation::Linear,
+                Keyframe {
+                    time: 1.0,
+                    value: AnimatedValue::Float(1.0)
+                }
+            )]
+        );
+    }
+
+    #[rstest]
+    fn an_invalid_curve_is_reported_at_its_target() {
+        let error = context()
+            .keyed_animation(&keyed(Curve {
+                first: key(0.5, 0.0),
+                rest: vec![(Interpolation::Linear, key(0.25, 1.0))],
+            }))
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            TransformErrorKind::InvalidCurve {
+                target: "`Face` shape `smile`".into(),
+                error: CurveError::TimeNotIncreasing { previous: 0.5, next: 0.25 },
+            }
+            .at(Some(at(6)))
+        );
     }
 
     #[rstest]
