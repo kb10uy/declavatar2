@@ -187,6 +187,7 @@ return da.avatar({
     - Provided parameters are declared with their VRChat names (`AFK`, `VRMode`, ...) and take part in type checks like any other parameter, so a group layer can be driven by `GestureLeft`.
     - A group, switch or puppet layer whose `driven_by` is omitted follows the parameter named after the layer. The parameter must exist: group requires int, switch requires bool, and puppet requires float. No driver parameter is generated implicitly.
     - A blend layer generates one float parameter `{blend}/{child}` per child, fixed at `1.0`. A collision with an existing parameter is an error.
+    - Every animator parameter carries its origin: declared, generated, or provided by a named group (`VRChat`). A client registers only the declared and generated ones as parameters the avatar owns.
 - Layers
     - Group option indices are `1..n` in the written order, and the default state is index `0`. State names are `Default` and the option names.
     - A switch layer compiles to `Disabled` and `Enabled` with `Disabled` as the default state and one transition each way (`If` / `IfNot`). A toggle list whose entry cannot be zeroed (an object reference) is an error that asks for both sides.

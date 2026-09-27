@@ -30,15 +30,15 @@ use crate::{
         animation::{ClipAttributes, Curve, FixedAnimationEntry, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe},
         animator::{
             AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
-            AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterTypeDefault,
-            BlendTreeType, MergeMode, PathMode,
+            AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin,
+            AnimatorParameterTypeDefault, BlendTreeType, MergeMode, PathMode,
         },
         external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath},
         state::{GenericStateBehavior, GenericValue},
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
         playable_layer::PlayableLayer,
         state_behaviour::{ParameterDrive, ParameterDriveTarget, TrackingControl, TrackingControlMode, TrackingControlTarget},
     },
@@ -292,6 +292,27 @@ enum_cases! {
         bool: AnimatorParameterTypeDefault::Bool(_) => AnimatorParameterTypeDefault::Bool(None),
         int: AnimatorParameterTypeDefault::Int(_) => AnimatorParameterTypeDefault::Int(Some(i32::MAX)),
         float: AnimatorParameterTypeDefault::Float(_) => AnimatorParameterTypeDefault::Float(Some(f32::MIN)),
+    }
+}
+
+enum_cases! {
+    fn animator_parameter_origins(value: AnimatorParameterOrigin) {
+        round_trip(AnimatorParameter::create_bool("Origin", None).with_origin(value));
+        round_trip(value);
+    }
+    cases {
+        declared: AnimatorParameterOrigin::Declared => AnimatorParameterOrigin::Declared,
+        generated: AnimatorParameterOrigin::Generated => AnimatorParameterOrigin::Generated,
+        provided: AnimatorParameterOrigin::Provided(_) => AnimatorParameterOrigin::Provided(ProvidedParameterGroup::Vrchat),
+    }
+}
+
+enum_cases! {
+    fn provided_parameter_groups(value: ProvidedParameterGroup) {
+        round_trip(value);
+    }
+    cases {
+        vrchat: ProvidedParameterGroup::Vrchat => ProvidedParameterGroup::Vrchat,
     }
 }
 

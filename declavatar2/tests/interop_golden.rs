@@ -14,13 +14,13 @@ use declavatar2::{
     interop::{Diagnostic, DiagnosticStage, Diagnostics, decode_avatar, decode_diagnostics, encode_avatar, encode_diagnostics},
     unity::{
         AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
-        AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatedValue, AnimatedValueType, AnimatorParameter, Asset,
-        AssetLocator, BlendTreeType, ClipAttributes, ComponentType, Curve, Externals, FixedAnimationEntry, GenericStateBehavior, GenericValue, InlineAnimation,
-        Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe, MergeMode, ObjectPath, PathMode,
+        AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatedValue, AnimatedValueType, AnimatorParameter,
+        AnimatorParameterOrigin, Asset, AssetLocator, BlendTreeType, ClipAttributes, ComponentType, Curve, Externals, FixedAnimationEntry,
+        GenericStateBehavior, GenericValue, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe, MergeMode, ObjectPath, PathMode,
     },
     vrchat::{
         ParameterDrive, ParameterDriveTarget, PlayableLayer, TrackingControl, TrackingControlMode, TrackingControlTarget,
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
     },
 };
 use nalgebra::{Quaternion, UnitQuaternion, Vector2, Vector3, Vector4};
@@ -456,8 +456,8 @@ fn parameters() -> Vec<AnimatorParameter> {
         AnimatorParameter::create_bool("Hat", Some(true)),
         AnimatorParameter::create_float("Blend", None),
         AnimatorParameter::create_bool("顔", None),
-        AnimatorParameter::create_int("GestureLeft", None),
-        AnimatorParameter::create_float("Weight", Some(1.0)),
+        AnimatorParameter::create_int("GestureLeft", None).with_origin(AnimatorParameterOrigin::Provided(ProvidedParameterGroup::Vrchat)),
+        AnimatorParameter::create_float("Weight", Some(1.0)).with_origin(AnimatorParameterOrigin::Generated),
         AnimatorParameter::create_int("Big", Some(i32::MAX)),
         AnimatorParameter::create_int("Small", Some(i32::MIN)),
         AnimatorParameter::create_float("Tiny", Some(f32::MIN_POSITIVE)),

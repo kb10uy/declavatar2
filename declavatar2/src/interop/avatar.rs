@@ -24,15 +24,15 @@ use crate::{
         animation::{ClipAttributes, Curve, FixedAnimationEntry, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe},
         animator::{
             AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
-            AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterTypeDefault,
-            BlendTreeType, MergeMode, PathMode,
+            AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin,
+            AnimatorParameterTypeDefault, BlendTreeType, MergeMode, PathMode,
         },
         external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath},
         state::{GenericStateBehavior, GenericValue},
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
         playable_layer::PlayableLayer,
         state_behaviour::{ParameterDrive, ParameterDriveTarget, TrackingControl, TrackingControlMode, TrackingControlTarget},
     },
@@ -356,7 +356,7 @@ impl Decode for PlayableController {
 }
 
 wire_struct! {
-    AnimatorParameter { name, type_default }
+    AnimatorParameter { name, type_default, origin }
 }
 
 wire_enum! {
@@ -364,6 +364,16 @@ wire_enum! {
         0 Bool(default),
         1 Int(default),
         2 Float(default),
+    }
+
+    AnimatorParameterOrigin {
+        0 Declared,
+        1 Generated,
+        2 Provided(group),
+    }
+
+    ProvidedParameterGroup {
+        0 Vrchat,
     }
 }
 

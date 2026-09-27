@@ -125,11 +125,15 @@ PlayableController:
   layers     : list<AnimatorLayer>
 
 AnimatorParameter:
-  name : string
-  kind : enum
+  name   : string
+  kind   : enum
     0 Bool  : default option<bool>
     1 Int   : default option<i32>
     2 Float : default option<f32>
+  origin : enum
+    0 Declared
+    1 Generated
+    2 Provided : group u8   0 VRChat
 
 AnimatorLayer:
   name          : string
@@ -164,6 +168,8 @@ Condition: enum
   4 Greater   : param, value f64
   5 Less      : param, value f64
 ```
+
+`origin` says who owns the parameter. `Declared` ones come from the `parameters` block and `Generated` ones are added by the transform, such as the weights of a blend layer; the avatar owns both. `Provided` ones are defined by the platform group they name and are only referenced.
 
 ### Motions
 

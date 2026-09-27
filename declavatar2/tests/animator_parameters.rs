@@ -6,7 +6,7 @@ use declavatar2::{
         parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup},
     },
     transform::{TransformErrorKind, transform},
-    unity::animator::{AnimatorParameter, AnimatorParameterTypeDefault},
+    unity::animator::{AnimatorParameter, AnimatorParameterOrigin, AnimatorParameterTypeDefault},
     vrchat::{
         expr_parameter::{ExpressionParameterTypeDefault, ExpressionParameterWidth},
         playable_layer::PlayableLayer,
@@ -109,7 +109,7 @@ fn defaults_keep_their_parameter_type(#[case] value: PrimitiveParameterValue, #[
 }
 
 #[rstest]
-fn provided_parameters_have_typed_absent_defaults() {
+fn provided_parameters_have_typed_absent_defaults_and_name_their_group() {
     let avatar = transform(&Avatar {
         parameters: vec![Parameter::Provided(ProvidedParameterGroup::Vrchat)],
         controllers: vec![Controller::new(PlayableLayer::Fx, vec![])],
@@ -117,11 +117,13 @@ fn provided_parameters_have_typed_absent_defaults() {
     })
     .unwrap();
     let parameters = &avatar.controllers[0].controller.parameters;
+    let provided = AnimatorParameterOrigin::Provided(ProvidedParameterGroup::Vrchat);
     for expected in [
         AnimatorParameter::create_bool("AFK", None),
         AnimatorParameter::create_int("GestureLeft", None),
         AnimatorParameter::create_float("GestureLeftWeight", None),
     ] {
-        assert!(parameters.contains(&expected));
+        assert!(parameters.contains(&expected.with_origin(provided)));
     }
+    assert!(parameters.iter().all(|parameter| parameter.origin == provided));
 }

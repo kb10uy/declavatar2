@@ -9,7 +9,7 @@ use crate::{
     },
     transform::error::{TransformError, TransformErrorKind},
     unity::{
-        animator::{AnimatorParameter, AnimatorParameterTypeDefault},
+        animator::{AnimatorParameter, AnimatorParameterOrigin, AnimatorParameterTypeDefault},
         external::Externals,
         value::AnimatedValueType,
     },
@@ -285,6 +285,11 @@ impl ParameterTable {
             .map(|entry| AnimatorParameter {
                 name: entry.name.clone(),
                 type_default: entry.type_default,
+                origin: match entry.source {
+                    ParameterSource::Declared(_) => AnimatorParameterOrigin::Declared,
+                    ParameterSource::Provided(_) => AnimatorParameterOrigin::Provided(ProvidedParameterGroup::Vrchat),
+                    ParameterSource::Generated => AnimatorParameterOrigin::Generated,
+                },
             })
             .collect()
     }

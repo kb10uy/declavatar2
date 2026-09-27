@@ -60,6 +60,12 @@ impl ExpressionParameterTypeDefault {
     }
 }
 
+/// Set of parameters that the platform defines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProvidedParameterGroup {
+    Vrchat,
+}
+
 /// Provided parameters by VRChat.
 /// See [VRChat's documentation](https://creators.vrchat.com/avatars/animator-parameters/#built-in-parameters) about details.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -9,16 +9,18 @@ use declavatar2::{
     core::resolution::Resolved,
     unity::{
         animation::InlineAnimation,
-        animator::{AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, MergeMode, PathMode},
+        animator::{AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin, MergeMode, PathMode},
         external::AssetLocator,
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth},
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
         playable_layer::PlayableLayer,
     },
 };
 use rstest::*;
+
+const VRCHAT: AnimatorParameterOrigin = AnimatorParameterOrigin::Provided(ProvidedParameterGroup::Vrchat);
 
 /// The script from the Lua API design section of AGENTS.md, compiled all the way to an avatar.
 const SCRIPT: &str = r#"local da = require "declavatar"
@@ -95,7 +97,7 @@ fn the_documented_example_compiles_to_the_avatar_it_describes() {
     assert!(!avatar.externals.needs_relative_root);
 
     let parameters = &fx.controller.parameters;
-    assert!(parameters.contains(&AnimatorParameter::create_int("GestureLeft", None)));
+    assert!(parameters.contains(&AnimatorParameter::create_int("GestureLeft", None).with_origin(VRCHAT)));
     assert!(parameters.contains(&AnimatorParameter::create_int("Emote", Some(42))));
     assert!(parameters.contains(&AnimatorParameter::create_bool("Hat", None)));
 
@@ -261,7 +263,12 @@ return da.avatar({
 
     for controller in &avatar.controllers {
         assert!(controller.controller.parameters.contains(&AnimatorParameter::create_bool("Hat", None)));
-        assert!(controller.controller.parameters.contains(&AnimatorParameter::create_int("GestureLeft", None)));
+        assert!(
+            controller
+                .controller
+                .parameters
+                .contains(&AnimatorParameter::create_int("GestureLeft", None).with_origin(VRCHAT))
+        );
     }
     let paths: Vec<_> = avatar.externals.object_paths.entries().iter().map(|entry| entry.value.clone()).collect();
     assert_eq!(paths, ["Hat"]);
