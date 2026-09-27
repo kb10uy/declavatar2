@@ -14,7 +14,7 @@ Every blob starts with 16 bytes. All multi-byte integers in the whole blob are l
 |---|---|---|---|
 | 0 | 4 | `magic` | `"DA2a"` (`44 41 32 61`) for Avatar, `"DA2d"` (`44 41 32 64`) for Diagnostics |
 | 4 | 2 | `schema_version` | u16. Version of the encoding rules below. Currently `1`. |
-| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `1` for both kinds. |
+| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `2` for Avatar and `1` for Diagnostics. |
 | 8 | 4 | `reserved` | Zero. |
 | 12 | 4 | `payload_len` | u32. Number of bytes following the header. |
 | 16 | `payload_len` | `payload` | See the payload sections. |
