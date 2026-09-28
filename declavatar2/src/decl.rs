@@ -9,10 +9,10 @@ pub mod raw;
 pub use avatar::Avatar;
 pub use behavior::{Animation, Behavior, Content, Drive};
 pub use controller::Controller;
-pub use layer::{BlendLayer, GroupLayer, GroupOption, Layer, PuppetKeyframe, PuppetLayer, SwitchContent, SwitchLayer};
+pub use layer::{BlendLayer, GroupLayer, GroupOption, Layer, LayerSettings, PuppetKeyframe, PuppetLayer, RawLayer, SwitchContent, SwitchLayer};
 pub use menu::{Axis, AxisTarget, Direction, FourAxes, MenuItem, TwoAxes};
 pub use parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup};
 pub use raw::{
-    BlendTree, BlendTreeField, BlendTreeType, ClipOptions, Condition, DirectBlendTree, DirectBlendTreeField, Motion, ParametricBlendTree, RawLayer, RawState,
-    RawTransition,
+    BlendTree, BlendTreeField, BlendTreeType, ClipOptions, Condition, DirectBlendTree, DirectBlendTreeField, Motion, ParametricBlendTree, RawMachine, RawState,
+    RawTransition, TransitionSource, TransitionTarget,
 };

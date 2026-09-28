@@ -89,6 +89,15 @@ declare_nodes! {
     /// State of a raw layer, with the transitions written inside it.
     "state" => RawState(crate::lua::api::raw::PendingState),
 
+    /// State machine nested in a raw layer, written with `da.raw.machine`.
+    "state machine" => RawMachine(decl::raw::RawMachine),
+
+    /// Entry of a state machine, the value `da.raw.entry`.
+    "entry" => RawEntry(()),
+
+    /// Exit of a state machine, the value `da.raw.exit`.
+    "exit" => RawExit(()),
+
     /// Transition of a raw layer, whose source may still be implied by a state.
     "transition" => RawTransition(crate::lua::api::raw::PendingTransition),
 

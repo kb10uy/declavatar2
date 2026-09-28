@@ -8,7 +8,7 @@ pub use animation::{ClipAttributes, Curve, CurveError, FixedAnimationEntry, Inli
 pub use animator::{
     AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty, AnimatedGameObjectTarget,
     AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin, AnimatorParameterType,
-    AnimatorParameterTypeDefault, BlendTreeType, MergeMode, PathMode,
+    AnimatorParameterTypeDefault, BlendTreeType, LayerBlending, MergeMode, PathMode,
 };
 pub use external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath};
 pub use state::{GenericStateBehavior, GenericValue, StateBehavior};

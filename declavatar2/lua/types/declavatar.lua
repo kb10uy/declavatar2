@@ -67,6 +67,15 @@ local da = {}
 --- State of a raw layer.
 ---@class da.State
 
+--- State machine nested in a raw layer.
+---@class da.Machine
+
+--- Entry of a state machine, the value `da.raw.entry`.
+---@class da.Entry
+
+--- Exit of a state machine, the value `da.raw.exit`.
+---@class da.Exit
+
 --- Transition between two states of a raw layer.
 ---@class da.Transition
 
@@ -106,6 +115,9 @@ local da = {}
 
 --- What the object paths of a controller start at: the avatar root, or a root the client supplies.
 ---@alias da.PathMode "absolute"|"relative"
+
+--- Whether a layer replaces what the layers before it animate, or adds to it.
+---@alias da.LayerBlending "override"|"additive"
 
 --- What tracking control does to the parts it names.
 ---@alias da.TrackingMode "tracking"|"animation"
@@ -159,6 +171,15 @@ local da = {}
 --- State of a raw layer, written as its name or as the state itself.
 ---@alias da.StateValue string|da.State
 
+--- State or nested state machine, written as its name or as the state or machine itself.
+---@alias da.NodeValue string|da.State|da.Machine
+
+--- Where a transition leaves: a state, the exit of a nested machine, or the entry of the machine holding it.
+---@alias da.SourceValue da.NodeValue|da.Entry
+
+--- Where a transition leads: a state, the entry of a nested machine, or the exit of the machine holding it.
+---@alias da.TargetValue da.NodeValue|da.Exit
+
 --- Place of a blend tree field: one number on a single axis, or two on a pair of them.
 ---@alias da.Position number|da.Vector|[number, number]
 
@@ -178,7 +199,7 @@ local da = {}
 ---@alias da.GroupChildList (da.GroupDefault|da.GroupOption|false)[]
 ---@alias da.KeyframeList (da.Keyframe|false)[]
 ---@alias da.ClipKeyframeList (da.ClipKeyframe|false)[]
----@alias da.RawChildList (da.State|da.Transition|false)[]
+---@alias da.RawChildList (da.State|da.Machine|da.Transition|false)[]
 ---@alias da.TransitionList (da.Transition|false)[]
 ---@alias da.ConditionList (da.Condition|false)[]
 ---@alias da.FieldList (da.Field|false)[]
@@ -219,20 +240,29 @@ local da = {}
 ---@field mode? da.MergeMode Defaults to `"append"`.
 ---@field priority? integer Order among controllers bound for the same playable layer. Defaults to `0`.
 ---@field path_mode? da.PathMode Defaults to `"absolute"`.
----@field mask? da.Asset Avatar mask the controller is applied with.
+---@field mask? da.Asset Avatar mask of every layer that does not have its own.
 
----@class da.GroupLayerOptions
+--- Options every layer takes.
+---@class da.LayerOptions
+---@field weight? number Weight the layer starts with, between 0 and 1. Defaults to 1.
+---@field blending? da.LayerBlending Defaults to `"override"`.
+---@field mask? da.Asset Avatar mask of this layer, used in place of the mask of its controller.
+
+---@class da.GroupLayerOptions: da.LayerOptions
 ---@field driven_by? string
 ---@field symmetric? boolean Defaults to true, where switching between options never passes through the default state.
 
----@class da.SwitchLayerOptions
+---@class da.SwitchLayerOptions: da.LayerOptions
 ---@field driven_by? string
 
----@class da.PuppetLayerOptions
+--- A puppet layer merged into a blend layer is not a layer of its own, so it takes none of `da.LayerOptions`.
+---@class da.PuppetLayerOptions: da.LayerOptions
 ---@field driven_by? string Must be a float.
 
----@class da.RawLayerOptions
----@field default? da.StateValue
+---@class da.MachineOptions
+---@field default? da.StateValue Must be a state the machine holds directly. Defaults to its first state.
+
+---@class da.RawLayerOptions: da.LayerOptions, da.MachineOptions
 
 ---@class da.RawStateOptions
 ---@field motion? da.Motion
@@ -710,10 +740,13 @@ function da.puppet_layer(name, options, keyframes) end
 
 --- Merges its children into one layer whose single state is a direct blend tree.
 --- Only puppet layers can be merged, and their targets sum instead of overriding.
+--- The layer options belong to the blend layer, not to its children.
 ---@param name string
+---@param options da.LayerOptions
 ---@param children da.LayerList
 ---@return da.Layer
-function da.blend_layer(name, children) end
+---@overload fun(name: string, children: da.LayerList): da.Layer
+function da.blend_layer(name, options, children) end
 
 --------------------------------------------------------------------------------
 -- Menu
@@ -766,12 +799,37 @@ function da.axis(target, labels) end
 da.raw = {}
 
 --- Layer written as a state machine. A transition written here names both of its ends.
+---
+--- A name written in a machine refers to a state or a state machine that machine holds
+--- directly, and states and machines share those names. A transition never crosses the
+--- boundary of a machine; it goes through the entry and the exit instead.
 ---@param name string
 ---@param options da.RawLayerOptions
 ---@param children da.RawChildList
 ---@return da.Layer
 ---@overload fun(name: string, children: da.RawChildList): da.Layer
 function da.raw.layer(name, options, children) end
+
+--- State machine nested in a raw layer or in another machine.
+---
+--- A transition leading to the machine enters it through its entry: the transitions leaving
+--- `da.raw.entry` inside it choose the state, and the default state is taken when none of them
+--- holds. A transition leading to `da.raw.exit` inside it leaves the machine, and the transitions
+--- leaving the machine in its parent choose where to go on.
+---@param name string
+---@param options da.MachineOptions
+---@param children da.RawChildList
+---@return da.Machine
+---@overload fun(name: string, children: da.RawChildList): da.Machine
+function da.raw.machine(name, options, children) end
+
+--- Entry of the machine holding a transition, written as the place the transition leaves.
+---@type da.Entry
+da.raw.entry = nil
+
+--- Exit of the machine holding a transition, written as the place the transition leads.
+---@type da.Exit
+da.raw.exit = nil
 
 --- One state of a raw layer. A transition written in `outgoing` leaves this state.
 ---@param name string
@@ -780,21 +838,23 @@ function da.raw.layer(name, options, children) end
 ---@return da.State
 function da.raw.state(name, options, outgoing) end
 
---- Transition between two states.
+--- Transition between two nodes of one state machine.
 ---
 --- Inside a state the source is implied, so `from` is left out. A table in the second
 --- place is the options table, which is how the three argument forms are told apart.
 ---
---- With an empty condition list the transition leaves once the motion of its source state
---- has played to the end (exit time 1).
----@param from da.StateValue
----@param to da.StateValue
+--- Leaving a state with an empty condition list, the transition is taken once the motion of
+--- the state has played to the end (exit time 1). Leaving `da.raw.entry` or a nested machine,
+--- the transition is chosen at the moment that place is passed, is taken at once with an empty
+--- condition list, and has no `duration`.
+---@param from da.SourceValue
+---@param to da.TargetValue
 ---@param options da.TransitionOptions
 ---@param conditions da.ConditionList
 ---@return da.Transition
----@overload fun(to: da.StateValue, conditions: da.ConditionList): da.Transition
----@overload fun(from: da.StateValue, to: da.StateValue, conditions: da.ConditionList): da.Transition
----@overload fun(to: da.StateValue, options: da.TransitionOptions, conditions: da.ConditionList): da.Transition
+---@overload fun(to: da.TargetValue, conditions: da.ConditionList): da.Transition
+---@overload fun(from: da.SourceValue, to: da.TargetValue, conditions: da.ConditionList): da.Transition
+---@overload fun(to: da.TargetValue, options: da.TransitionOptions, conditions: da.ConditionList): da.Transition
 function da.raw.transition(from, to, options, conditions) end
 
 --- Clip generated from the written targets.

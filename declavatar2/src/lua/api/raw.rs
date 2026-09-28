@@ -6,14 +6,17 @@ use crate::{
     core::{phase::Declared, resolution::Unresolved, value_set::ValueSet},
     decl::{
         behavior::Animation,
-        layer::Layer,
+        layer::{Layer, RawLayer},
         raw::{
-            BlendTree, BlendTreeField, BlendTreeType, ClipOptions, Condition, DirectBlendTree, DirectBlendTreeField, Motion, ParametricBlendTree, RawLayer,
-            RawState, RawTransition,
+            BlendTree, BlendTreeField, BlendTreeType, ClipOptions, Condition, DirectBlendTree, DirectBlendTreeField, Motion, ParametricBlendTree, RawMachine,
+            RawState, RawTransition, TransitionSource, TransitionTarget,
         },
     },
     lua::{
-        api::target::{AssetArgument, located},
+        api::{
+            layer,
+            target::{AssetArgument, located},
+        },
         content, list,
         location::caller_location,
         node,
@@ -45,8 +48,11 @@ pub(crate) const INTERPOLATIONS: &[(&str, Interpolation)] = &[("constant", Inter
 pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
     let raw = lua.create_table()?;
     raw.set("layer", lua.create_function(layer)?)?;
+    raw.set("machine", lua.create_function(machine)?)?;
     raw.set("state", lua.create_function(state)?)?;
     raw.set("transition", lua.create_function(transition)?)?;
+    raw.set("entry", node::RawEntry(()))?;
+    raw.set("exit", node::RawExit(()))?;
     raw.set("clip", lua.create_function(clip)?)?;
     raw.set("keyed_clip", lua.create_function(keyed_clip)?)?;
     raw.set("keyframe", lua.create_function(keyframe)?)?;
@@ -71,8 +77,8 @@ pub struct PendingState {
 /// Transition whose `from` is filled in by the state that holds it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PendingTransition {
-    pub from: Option<Unresolved<String>>,
-    pub to: Unresolved<String>,
+    pub from: Option<TransitionSource>,
+    pub to: TransitionTarget,
     pub duration: Option<f64>,
     pub conditions: Vec<Condition>,
 }
@@ -101,19 +107,58 @@ impl FromLua for StateName {
     }
 }
 
-/// Child of a raw layer, which is either one of its states or a transition between two of them.
-enum LayerChild {
+/// Reference to a node of a machine, written as its name or as the state or nested machine itself.
+struct NodeName(String);
+
+impl FromLua for NodeName {
+    fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
+        match &value {
+            Value::String(name) => Ok(Self(name.to_string_lossy())),
+            Value::UserData(userdata) if userdata.is::<node::RawState>() => Ok(Self(node::RawState::from_lua(value.clone(), lua)?.0.state.name)),
+            Value::UserData(userdata) if userdata.is::<node::RawMachine>() => Ok(Self(node::RawMachine::from_lua(value.clone(), lua)?.0.name)),
+            other => Err(LuaError::runtime(format!(
+                "expected the name of a state or a state machine, a state or a state machine, got {}",
+                node::describe(other)
+            ))),
+        }
+    }
+}
+
+fn source_of(lua: &Lua, value: Value) -> LuaResult<TransitionSource> {
+    match &value {
+        Value::UserData(userdata) if userdata.is::<node::RawEntry>() => Ok(TransitionSource::Entry),
+        Value::UserData(userdata) if userdata.is::<node::RawExit>() => Err(LuaError::runtime(
+            "`da.raw.exit` is where a transition leads, so it cannot be the place a transition leaves",
+        )),
+        _ => Ok(TransitionSource::Node(located(lua, NodeName::from_lua(value, lua)?.0))),
+    }
+}
+
+fn target_of(lua: &Lua, value: Value) -> LuaResult<TransitionTarget> {
+    match &value {
+        Value::UserData(userdata) if userdata.is::<node::RawExit>() => Ok(TransitionTarget::Exit),
+        Value::UserData(userdata) if userdata.is::<node::RawEntry>() => Err(LuaError::runtime(
+            "`da.raw.entry` is where a transition leaves, so it cannot be the place a transition leads",
+        )),
+        _ => Ok(TransitionTarget::Node(located(lua, NodeName::from_lua(value, lua)?.0))),
+    }
+}
+
+/// Child of a state machine: one of its states, a machine nested in it, or a transition between its nodes.
+enum MachineChild {
     State(PendingState),
+    Machine(RawMachine),
     Transition(PendingTransition),
 }
 
-impl FromLua for LayerChild {
+impl FromLua for MachineChild {
     fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
         match &value {
             Value::UserData(userdata) if userdata.is::<node::RawState>() => Ok(Self::State(node::RawState::from_lua(value.clone(), lua)?.0)),
+            Value::UserData(userdata) if userdata.is::<node::RawMachine>() => Ok(Self::Machine(node::RawMachine::from_lua(value.clone(), lua)?.0)),
             Value::UserData(userdata) if userdata.is::<node::RawTransition>() => Ok(Self::Transition(node::RawTransition::from_lua(value.clone(), lua)?.0)),
             other => Err(LuaError::runtime(format!(
-                "expected `da.raw.state` or `da.raw.transition`, got {}",
+                "expected `da.raw.state`, `da.raw.machine` or `da.raw.transition`, got {}",
                 node::describe(other)
             ))),
         }
@@ -125,22 +170,38 @@ fn layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaResult<n
 
     let (table, children) = with_children(lua, OWNER, arguments)?;
     let mut options = Options::new(OWNER, table);
+    let settings = layer::settings(lua, OWNER, &mut options)?;
+    let machine = machine_of(lua, OWNER, name, options, &children)?;
+    Ok(node::Layer(Layer::Raw(RawLayer { settings, machine })))
+}
+
+fn machine(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaResult<node::RawMachine> {
+    const OWNER: &str = "da.raw.machine";
+
+    let (table, children) = with_children(lua, OWNER, arguments)?;
+    let options = Options::new(OWNER, table);
+    Ok(node::RawMachine(machine_of(lua, OWNER, name, options, &children)?))
+}
+
+fn machine_of(lua: &Lua, owner: &'static str, name: String, mut options: Options, children: &Table) -> LuaResult<RawMachine> {
     let default_state = options.take::<StateName>("default")?.map(|state| located(lua, state.0));
     options.finish()?;
 
     let mut states = Vec::new();
+    let mut machines = Vec::new();
     let mut transitions = Vec::new();
-    for child in list::collect::<LayerChild>(lua, OWNER, &children)? {
+    for child in list::collect::<MachineChild>(lua, owner, children)? {
         match child {
-            LayerChild::State(pending) => {
-                let from = located(lua, pending.state.name.clone());
+            MachineChild::State(pending) => {
+                let from = TransitionSource::Node(located(lua, pending.state.name.clone()));
                 states.push(pending.state);
                 transitions.extend(pending.transitions.into_iter().map(|written| settle(written, Some(from.clone()))));
             }
-            LayerChild::Transition(written) => {
+            MachineChild::Machine(nested) => machines.push(nested),
+            MachineChild::Transition(written) => {
                 if written.from.is_none() {
                     return Err(LuaError::runtime(format!(
-                        "{OWNER}: a transition written in `{name}` itself needs the state it leaves, \
+                        "{owner}: a transition written in `{name}` itself needs the place it leaves, \
                          because only one written inside a state can leave it out"
                     )));
                 }
@@ -149,16 +210,17 @@ fn layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaResult<n
         }
     }
 
-    Ok(node::Layer(Layer::Raw(RawLayer {
+    Ok(RawMachine {
         name,
         default_state,
         states,
+        machines,
         transitions,
         at: caller_location(lua),
-    })))
+    })
 }
 
-fn settle(written: PendingTransition, holder: Option<Unresolved<String>>) -> RawTransition {
+fn settle(written: PendingTransition, holder: Option<TransitionSource>) -> RawTransition {
     RawTransition {
         from: written.from.or(holder).expect("a transition has a source by now"),
         to: written.to,
@@ -242,12 +304,24 @@ fn transition(lua: &Lua, arguments: Variadic<Value>) -> LuaResult<node::RawTrans
         )));
     };
 
+    let from = from.map(|written| source_of(lua, written)).transpose()?;
+    let to = target_of(lua, to)?;
+    if from == Some(TransitionSource::Entry) {
+        if duration.is_some() {
+            return Err(LuaError::runtime(format!(
+                "{OWNER}: a transition leaving `da.raw.entry` is taken at once, so it has no `duration`"
+            )));
+        }
+        if to == TransitionTarget::Exit {
+            return Err(LuaError::runtime(format!(
+                "{OWNER}: a transition leaving `da.raw.entry` leads to a state or a state machine, not to `da.raw.exit`"
+            )));
+        }
+    }
+
     Ok(node::RawTransition(PendingTransition {
-        from: from
-            .map(|written| StateName::from_lua(written, lua))
-            .transpose()?
-            .map(|state| located(lua, state.0)),
-        to: located(lua, StateName::from_lua(to, lua)?.0),
+        from,
+        to,
         duration,
         conditions: list::collect::<node::Condition>(lua, OWNER, &conditions)?
             .into_iter()
@@ -553,10 +627,10 @@ mod tests {
         lua::testing::{eval, eval_error},
     };
 
-    fn raw_layer_of(expression: &str) -> RawLayer {
+    fn raw_layer_of(expression: &str) -> RawMachine {
         let (lua, value) = eval(expression);
         match node::Layer::from_lua(value, &lua).expect("a layer should be built").0 {
-            Layer::Raw(raw) => raw,
+            Layer::Raw(raw) => raw.machine,
             other => panic!("expected a raw layer, got {other:?}"),
         }
     }
@@ -575,12 +649,24 @@ mod tests {
         Unresolved::new(name.into())
     }
 
-    fn edges(layer: &RawLayer) -> Vec<(String, String)> {
-        layer
+    fn edges(machine: &RawMachine) -> Vec<(String, String)> {
+        let source = |source: &TransitionSource| match source {
+            TransitionSource::Entry => "<entry>".to_owned(),
+            TransitionSource::Node(name) => name.value.clone(),
+        };
+        let target = |target: &TransitionTarget| match target {
+            TransitionTarget::Exit => "<exit>".to_owned(),
+            TransitionTarget::Node(name) => name.value.clone(),
+        };
+        machine
             .transitions
             .iter()
-            .map(|transition| (transition.from.value.clone(), transition.to.value.clone()))
+            .map(|transition| (source(&transition.from), target(&transition.to)))
             .collect()
+    }
+
+    fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
+        expected.iter().map(|(from, to)| ((*from).to_owned(), (*to).to_owned())).collect()
     }
 
     #[rstest]
@@ -617,7 +703,67 @@ mod tests {
     #[rstest]
     fn a_transition_in_the_layer_itself_needs_the_state_it_leaves() {
         let message = eval_error("da.raw.layer('Gesture', {}, { da.raw.transition('wave', { da.raw.cond.nonzero('Gesture') }) })");
-        assert!(message.contains("needs the state it leaves"), "{message}");
+        assert!(message.contains("needs the place it leaves"), "{message}");
+    }
+
+    #[rstest]
+    fn a_machine_nests_states_machines_and_transitions() {
+        let layer = raw_layer_of(
+            "da.raw.layer('Emote', {\
+             da.raw.state('Idle'),\
+             da.raw.machine('Dance', { default = 'Step' }, {\
+             da.raw.state('Intro'),\
+             da.raw.state('Step', {}, { da.raw.transition(da.raw.exit, { da.raw.cond.zero('Emote') }) }),\
+             da.raw.machine('Finale', { da.raw.state('Bow') }),\
+             da.raw.transition(da.raw.entry, 'Finale', { da.raw.cond.eq('Emote', 2) }),\
+             }),\
+             da.raw.transition('Idle', 'Dance', { da.raw.cond.nonzero('Emote') }),\
+             da.raw.transition('Dance', 'Idle', {}),\
+             })",
+        );
+
+        assert_eq!(layer.machines.len(), 1);
+        let dance = &layer.machines[0];
+        assert_eq!(dance.name, "Dance");
+        assert_eq!(dance.default_state, Some(named("Step")));
+        assert_eq!(dance.states.iter().map(|state| state.name.clone()).collect::<Vec<_>>(), ["Intro", "Step"]);
+        assert_eq!(dance.machines.iter().map(|machine| machine.name.clone()).collect::<Vec<_>>(), ["Finale"]);
+        assert_eq!(edges(dance), pairs(&[("Step", "<exit>"), ("<entry>", "Finale")]));
+        assert_eq!(edges(&layer), pairs(&[("Idle", "Dance"), ("Dance", "Idle")]));
+    }
+
+    #[rstest]
+    fn a_machine_reference_is_written_as_a_name_or_as_the_machine_itself() {
+        let layer = raw_layer_of(
+            "(function()\
+             local dance = da.raw.machine('Dance', { da.raw.state('Step') })\
+             return da.raw.layer('Emote', {\
+             da.raw.state('Idle', {}, { da.raw.transition(dance, {}) }),\
+             dance,\
+             da.raw.transition(dance, 'Idle', {}),\
+             })\
+             end)()",
+        );
+
+        assert_eq!(edges(&layer), pairs(&[("Idle", "Dance"), ("Dance", "Idle")]));
+    }
+
+    #[rstest]
+    #[case::exit_as_source("da.raw.transition(da.raw.exit, 'Idle', {})", "`da.raw.exit` is where a transition leads")]
+    #[case::entry_as_target("da.raw.transition(da.raw.entry, {})", "`da.raw.entry` is where a transition leaves")]
+    #[case::timed_entry("da.raw.transition(da.raw.entry, 'Idle', { duration = 0.5 }, {})", "is taken at once, so it has no `duration`")]
+    #[case::entry_to_exit("da.raw.transition(da.raw.entry, da.raw.exit, {})", "not to `da.raw.exit`")]
+    #[case::machine_as_default(
+        "da.raw.layer('Emote', { default = da.raw.machine('Dance', {}) }, {})",
+        "expected a state name or a state, got state machine"
+    )]
+    #[case::bad_reference(
+        "da.raw.transition(da.raw.clip {}, {})",
+        "expected the name of a state or a state machine, a state or a state machine, got motion"
+    )]
+    fn entry_and_exit_stay_on_their_side_of_a_transition(#[case] expression: &str, #[case] expected: &str) {
+        let message = eval_error(expression);
+        assert!(message.contains(expected), "{message}");
     }
 
     #[rstest]
@@ -945,8 +1091,17 @@ mod tests {
     }
 
     #[rstest]
+    fn a_nested_machine_is_not_a_layer_and_takes_no_layer_settings() {
+        let message = eval_error("da.raw.machine('Dance', { weight = 0.5 }, {})");
+        assert!(message.contains("da.raw.machine: unknown option `weight`"), "{message}");
+    }
+
+    #[rstest]
     fn a_layer_child_must_be_a_state_or_a_transition() {
         let message = eval_error("da.raw.layer('Gesture', {}, { da.renderer('Face'):shape('smile') })");
-        assert!(message.contains("expected `da.raw.state` or `da.raw.transition`, got target"), "{message}");
+        assert!(
+            message.contains("expected `da.raw.state`, `da.raw.machine` or `da.raw.transition`, got target"),
+            "{message}"
+        );
     }
 }

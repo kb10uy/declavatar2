@@ -7,8 +7,8 @@ use std::{
 use declavatar2::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
-        TransitionSource, TransitionTarget,
+        DirectField, LayerRef, LayerSettings, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField,
+        PlayableController, Playback, StateMachine, TransitionSource, TransitionTarget,
     },
     core::{Compiled, Extern, Resolved, SourceLocation, Unresolved, value_set::ValueSet},
     interop::{Diagnostic, DiagnosticStage, Diagnostics, decode_avatar, decode_diagnostics, encode_avatar, encode_diagnostics},
@@ -16,7 +16,8 @@ use declavatar2::{
         AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
         AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatedValue, AnimatedValueType, AnimatorParameter,
         AnimatorParameterOrigin, Asset, AssetLocator, BlendTreeType, ClipAttributes, ComponentType, Curve, Externals, FixedAnimationEntry,
-        GenericStateBehavior, GenericValue, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe, MergeMode, ObjectPath, PathMode,
+        GenericStateBehavior, GenericValue, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe, LayerBlending, MergeMode,
+        ObjectPath, PathMode,
     },
     vrchat::{
         ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlayableLayer,
@@ -556,6 +557,7 @@ fn parameters() -> Vec<AnimatorParameter> {
 fn state(name: &str, motion: Option<Motion>, playback: Playback, write_defaults: bool, behaviors: Vec<Behavior>) -> AnimatorState {
     AnimatorState {
         name: name.into(),
+        machine: None,
         motion,
         playback,
         write_defaults,
@@ -567,7 +569,9 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
     vec![
         AnimatorLayer {
             name: "Expressions".into(),
+            settings: LayerSettings::default(),
             default_state: Some(0),
+            machines: vec![],
             states: vec![
                 state(
                     "Default",
@@ -583,7 +587,7 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
             ],
             transitions: vec![
                 AnimatorTransition {
-                    from: TransitionSource::Entry,
+                    from: TransitionSource::Entry(None),
                     to: TransitionTarget::State(1),
                     duration: 0.0,
                     conditions: vec![AnimatorCondition::Equals(int("Emote"), 1)],
@@ -607,7 +611,7 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
                     conditions: vec![AnimatorCondition::IfNot(boolean("顔"))],
                 },
                 AnimatorTransition {
-                    from: TransitionSource::Entry,
+                    from: TransitionSource::Entry(None),
                     to: TransitionTarget::Exit,
                     duration: 0.0,
                     conditions: vec![],
@@ -616,7 +620,13 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
         },
         AnimatorLayer {
             name: "Puppet".into(),
+            settings: LayerSettings {
+                weight: 0.5,
+                blending: LayerBlending::Additive,
+                mask: Some(refs.mask),
+            },
             default_state: Some(0),
+            machines: vec![],
             states: vec![state(
                 "Keyed",
                 Some(keyed(refs)),
@@ -632,7 +642,9 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
         },
         AnimatorLayer {
             name: "External".into(),
+            settings: LayerSettings::default(),
             default_state: None,
+            machines: vec![],
             states: vec![
                 state("Clip", Some(Motion::Clip(Clip::External(refs.clip))), Playback::default(), false, vec![]),
                 state("Empty", None, Playback::default(), true, vec![]),
@@ -641,7 +653,9 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
         },
         AnimatorLayer {
             name: "Trees".into(),
+            settings: LayerSettings::default(),
             default_state: Some(1),
+            machines: vec![],
             states: vec![
                 state("Parametric", Some(trees(refs)), Playback::default(), true, vec![]),
                 state(
@@ -669,17 +683,82 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
         },
         AnimatorLayer {
             name: String::new(),
+            settings: LayerSettings::default(),
             default_state: None,
+            machines: vec![],
             states: vec![],
             transitions: vec![],
         },
+        AnimatorLayer {
+            name: "Machines".into(),
+            settings: LayerSettings::default(),
+            default_state: Some(0),
+            machines: vec![
+                StateMachine {
+                    name: "Dance".into(),
+                    parent: None,
+                    default_state: Some(1),
+                },
+                StateMachine {
+                    name: "Finale".into(),
+                    parent: Some(0),
+                    default_state: None,
+                },
+            ],
+            states: vec![
+                state("Idle", None, Playback::default(), false, vec![]),
+                nested_state("Step", 0),
+                nested_state("Bow", 1),
+            ],
+            transitions: vec![
+                AnimatorTransition {
+                    from: TransitionSource::State(0),
+                    to: TransitionTarget::Machine(0),
+                    duration: 0.5,
+                    conditions: vec![AnimatorCondition::Equals(int("Emote"), 2)],
+                },
+                AnimatorTransition {
+                    from: TransitionSource::Entry(Some(0)),
+                    to: TransitionTarget::Machine(1),
+                    duration: 0.0,
+                    conditions: vec![AnimatorCondition::If(boolean("Hat"))],
+                },
+                AnimatorTransition {
+                    from: TransitionSource::State(2),
+                    to: TransitionTarget::Exit,
+                    duration: 0.0,
+                    conditions: vec![],
+                },
+                AnimatorTransition {
+                    from: TransitionSource::MachineExit(1),
+                    to: TransitionTarget::State(1),
+                    duration: 0.0,
+                    conditions: vec![],
+                },
+                AnimatorTransition {
+                    from: TransitionSource::MachineExit(0),
+                    to: TransitionTarget::Exit,
+                    duration: 0.0,
+                    conditions: vec![AnimatorCondition::Equals(int("Emote"), 0)],
+                },
+            ],
+        },
     ]
+}
+
+fn nested_state(name: &str, machine: usize) -> AnimatorState {
+    AnimatorState {
+        machine: Some(machine),
+        ..state(name, None, Playback::default(), false, vec![])
+    }
 }
 
 fn gesture_layers(refs: &Refs) -> Vec<AnimatorLayer> {
     vec![AnimatorLayer {
         name: "Hat".into(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
+        machines: vec![],
         states: vec![
             state(
                 "Disabled",

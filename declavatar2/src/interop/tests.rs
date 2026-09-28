@@ -16,8 +16,8 @@ use crate::{
     EvaluateOptions,
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Behavior, BlendTree, Clip, DirectBlendTree, DirectField,
-        LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
-        TransitionSource, TransitionTarget,
+        LayerRef, LayerSettings, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
+        StateMachine, TransitionSource, TransitionTarget,
     },
     compile,
     core::{
@@ -32,7 +32,7 @@ use crate::{
         animator::{
             AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
             AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin,
-            AnimatorParameterTypeDefault, BlendTreeType, MergeMode, PathMode,
+            AnimatorParameterTypeDefault, BlendTreeType, LayerBlending, MergeMode, PathMode,
         },
         external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath},
         state::{GenericStateBehavior, GenericValue},
@@ -57,6 +57,7 @@ fn context() -> Context {
             ("Float".to_string(), AnimatedValueType::Float),
         ]),
         states: Some(4),
+        machines: Some(2),
     }
 }
 
@@ -220,6 +221,7 @@ fn direction(label: Option<&str>) -> MenuDirection {
 fn state(name: &str, motion: Option<Motion>) -> AnimatorState {
     AnimatorState {
         name: name.into(),
+        machine: None,
         motion,
         playback: Playback::default(),
         write_defaults: false,
@@ -273,6 +275,25 @@ enum_cases! {
         tpose: PlayableLayer::TPose => PlayableLayer::TPose,
         ikpose: PlayableLayer::IkPose => PlayableLayer::IkPose,
     }
+}
+
+enum_cases! {
+    fn layer_blendings(value: LayerBlending) {
+        round_trip(value);
+    }
+    cases {
+        override_: LayerBlending::Override => LayerBlending::Override,
+        additive: LayerBlending::Additive => LayerBlending::Additive,
+    }
+}
+
+#[rstest]
+fn layer_settings_round_trip() {
+    round_trip(LayerSettings {
+        weight: 0.25,
+        blending: LayerBlending::Additive,
+        mask: Some(asset(3)),
+    });
 }
 
 enum_cases! {
@@ -332,8 +353,9 @@ enum_cases! {
         round_trip(value);
     }
     cases {
-        entry: TransitionSource::Entry => TransitionSource::Entry,
+        entry: TransitionSource::Entry(_) => TransitionSource::Entry(Some(1)),
         state: TransitionSource::State(_) => TransitionSource::State(3),
+        machine_exit: TransitionSource::MachineExit(_) => TransitionSource::MachineExit(0),
     }
 }
 
@@ -344,7 +366,62 @@ enum_cases! {
     cases {
         state: TransitionTarget::State(_) => TransitionTarget::State(0),
         exit: TransitionTarget::Exit => TransitionTarget::Exit,
+        machine: TransitionTarget::Machine(_) => TransitionTarget::Machine(1),
     }
+}
+
+#[rstest]
+fn the_root_entry_round_trips() {
+    round_trip(TransitionSource::Entry(None));
+}
+
+#[rstest]
+fn a_layer_with_nested_machines_round_trips() {
+    let nested = |name: &str, machine: Option<usize>| AnimatorState { machine, ..state(name, None) };
+    round_trip(AnimatorLayer {
+        name: "Emote".into(),
+        settings: LayerSettings::default(),
+        default_state: Some(0),
+        machines: vec![
+            StateMachine {
+                name: "Dance".into(),
+                parent: None,
+                default_state: Some(1),
+            },
+            StateMachine {
+                name: "Finale".into(),
+                parent: Some(0),
+                default_state: Some(2),
+            },
+        ],
+        states: vec![nested("Idle", None), nested("Step", Some(0)), nested("Bow", Some(1))],
+        transitions: vec![
+            AnimatorTransition {
+                from: TransitionSource::State(0),
+                to: TransitionTarget::Machine(0),
+                duration: 0.0,
+                conditions: vec![],
+            },
+            AnimatorTransition {
+                from: TransitionSource::Entry(Some(0)),
+                to: TransitionTarget::Machine(1),
+                duration: 0.0,
+                conditions: vec![],
+            },
+            AnimatorTransition {
+                from: TransitionSource::State(2),
+                to: TransitionTarget::Exit,
+                duration: 0.0,
+                conditions: vec![],
+            },
+            AnimatorTransition {
+                from: TransitionSource::MachineExit(0),
+                to: TransitionTarget::State(0),
+                duration: 0.0,
+                conditions: vec![],
+            },
+        ],
+    });
 }
 
 enum_cases! {
@@ -800,6 +877,36 @@ fn extern_table_with_duplicate_values() -> Vec<u8> {
 fn layer_with_dangling_default_state() -> Vec<u8> {
     let mut writer = Writer::new();
     writer.string("Layer").unwrap();
+    LayerSettings::default().encode(&mut writer).unwrap();
+    writer.u8(1);
+    writer.u32(0);
+    writer.u32(0);
+    writer.u32(0);
+    writer.u32(0);
+    writer.into_bytes()
+}
+
+fn layer_with_machine_before_its_parent() -> Vec<u8> {
+    let mut writer = Writer::new();
+    writer.string("Layer").unwrap();
+    LayerSettings::default().encode(&mut writer).unwrap();
+    writer.u8(0);
+    writer.u32(1);
+    writer.string("Child").unwrap();
+    writer.u8(1);
+    writer.u32(0);
+    writer.u8(0);
+    writer.into_bytes()
+}
+
+fn layer_with_dangling_machine_default() -> Vec<u8> {
+    let mut writer = Writer::new();
+    writer.string("Layer").unwrap();
+    LayerSettings::default().encode(&mut writer).unwrap();
+    writer.u8(0);
+    writer.u32(1);
+    writer.string("Machine").unwrap();
+    writer.u8(0);
     writer.u8(1);
     writer.u32(0);
     writer.u32(0);
@@ -828,6 +935,10 @@ fn duplicate_controller_parameters() -> Vec<u8> {
 #[case::state_out_of_range(encode(&TransitionSource::State(4)), decode::<TransitionSource>, DecodeError::StateOutOfRange { index: 4, len: 4 })]
 #[case::target_out_of_range(encode(&TransitionTarget::State(5)), decode::<TransitionTarget>, DecodeError::StateOutOfRange { index: 5, len: 4 })]
 #[case::dangling_default_state(layer_with_dangling_default_state(), decode::<AnimatorLayer>, DecodeError::StateOutOfRange { index: 0, len: 0 })]
+#[case::machine_out_of_range(encode(&TransitionSource::MachineExit(2)), decode::<TransitionSource>, DecodeError::MachineOutOfRange { index: 2, len: 2 })]
+#[case::machine_target_out_of_range(encode(&TransitionTarget::Machine(3)), decode::<TransitionTarget>, DecodeError::MachineOutOfRange { index: 3, len: 2 })]
+#[case::machine_before_its_parent(layer_with_machine_before_its_parent(), decode::<AnimatorLayer>, DecodeError::MachineOutOfRange { index: 0, len: 0 })]
+#[case::dangling_machine_default(layer_with_dangling_machine_default(), decode::<AnimatorLayer>, DecodeError::StateOutOfRange { index: 0, len: 0 })]
 #[case::unknown_parameter(encode(&Resolved::new("Missing".to_string(), AnimatedValueType::Int)), decode::<ParameterRef>, DecodeError::UnknownParameter("Missing".into()))]
 #[case::reference_without_asset(vec![8, 0, 0, 0, 0], decode::<AnimatedValue<()>>, DecodeError::InvalidDiscriminator { type_name: "AnimatedValue<()>", value: 8 })]
 #[case::unknown_discriminator(vec![9], decode::<AnimatedValueType>, DecodeError::InvalidDiscriminator { type_name: "AnimatedValueType", value: 9 })]
@@ -866,7 +977,9 @@ fn controller(playable: PlayableLayer, parameters: Vec<AnimatorParameter>, layer
 fn layer_driven_by(name: &str, value_type: AnimatedValueType) -> AnimatorLayer {
     AnimatorLayer {
         name: "Layer".into(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
+        machines: vec![],
         states: vec![state("A", None), state("B", None)],
         transitions: vec![AnimatorTransition {
             from: TransitionSource::State(0),
@@ -975,7 +1088,9 @@ fn externals_lead_the_avatar_payload_and_size_the_tables() {
             vec![],
             vec![AnimatorLayer {
                 name: "Skin".into(),
+                settings: LayerSettings::default(),
                 default_state: None,
+                machines: vec![],
                 states: vec![state(
                     "Only",
                     Some(Motion::Clip(Clip::Inline(InlineAnimation::Fixed(ValueSet::from([FixedAnimationEntry {
@@ -1034,7 +1149,9 @@ fn controlling(playable: PlayableLayer, layer: LayerRef) -> PlayableController {
     }));
     let layer = AnimatorLayer {
         name: "Control".into(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
+        machines: vec![],
         states: vec![control],
         transitions: vec![],
     };
@@ -1044,7 +1161,9 @@ fn controlling(playable: PlayableLayer, layer: LayerRef) -> PlayableController {
 fn layer_named(name: &str) -> AnimatorLayer {
     AnimatorLayer {
         name: name.into(),
+        settings: LayerSettings::default(),
         default_state: None,
+        machines: vec![],
         states: vec![],
         transitions: vec![],
     }

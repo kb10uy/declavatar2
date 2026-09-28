@@ -5,7 +5,7 @@ use super::wire::{DecodeError, EncodeError};
 pub const HEADER_LEN: usize = 16;
 pub const SCHEMA_VERSION: u16 = 1;
 pub const AVATAR_MAGIC: [u8; 4] = *b"DA2a";
-pub const AVATAR_DATA_VERSION: u16 = 3;
+pub const AVATAR_DATA_VERSION: u16 = 4;
 pub const DIAGNOSTICS_MAGIC: [u8; 4] = *b"DA2d";
 pub const DIAGNOSTICS_DATA_VERSION: u16 = 1;
 
@@ -111,7 +111,7 @@ mod tests {
     #[rstest]
     fn a_written_header_has_the_documented_layout() {
         let bytes = write_blob(BlobKind::Avatar, &[0xaa, 0xbb, 0xcc]).unwrap();
-        assert_eq!(bytes, [b'D', b'A', b'2', b'a', 1, 0, 3, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0xaa, 0xbb, 0xcc]);
+        assert_eq!(bytes, [b'D', b'A', b'2', b'a', 1, 0, 4, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0xaa, 0xbb, 0xcc]);
         assert_eq!(read_blob(BlobKind::Avatar, &bytes).unwrap(), [0xaa, 0xbb, 0xcc]);
 
         let bytes = write_blob(BlobKind::Diagnostics, &[]).unwrap();
@@ -129,16 +129,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case::truncated(header(b"DA2a", 1, 3, 0, 0)[..15].to_vec(), DecodeError::TruncatedHeader { found: 15 })]
+    #[case::truncated(header(b"DA2a", 1, 4, 0, 0)[..15].to_vec(), DecodeError::TruncatedHeader { found: 15 })]
     #[case::empty(vec![], DecodeError::TruncatedHeader { found: 0 })]
     #[case::unknown_magic(header(b"DA2x", 1, 3, 0, 0), DecodeError::UnknownMagic(*b"DA2x"))]
     #[case::other_kind(header(b"DA2d", 1, 1, 0, 0), DecodeError::UnexpectedKind { expected: BlobKind::Avatar, found: BlobKind::Diagnostics })]
     #[case::schema(header(b"DA2a", 2, 3, 0, 0), DecodeError::SchemaVersionMismatch { expected: 1, found: 2 })]
-    #[case::data(header(b"DA2a", 1, 9, 0, 0), DecodeError::DataVersionMismatch { kind: BlobKind::Avatar, expected: 3, found: 9 })]
-    #[case::reserved(header(b"DA2a", 1, 3, 0x100, 0), DecodeError::ReservedNotZero(0x100))]
-    #[case::short_payload(header(b"DA2a", 1, 3, 0, 2), DecodeError::LengthMismatch { declared: 2, actual: 0 })]
-    #[case::long_payload([header(b"DA2a", 1, 3, 0, 0), vec![0]].concat(), DecodeError::LengthMismatch { declared: 0, actual: 1 })]
-    #[case::huge_payload(header(b"DA2a", 1, 3, 0, u32::MAX), DecodeError::LengthMismatch { declared: u32::MAX, actual: 0 })]
+    #[case::data(header(b"DA2a", 1, 9, 0, 0), DecodeError::DataVersionMismatch { kind: BlobKind::Avatar, expected: 4, found: 9 })]
+    #[case::reserved(header(b"DA2a", 1, 4, 0x100, 0), DecodeError::ReservedNotZero(0x100))]
+    #[case::short_payload(header(b"DA2a", 1, 4, 0, 2), DecodeError::LengthMismatch { declared: 2, actual: 0 })]
+    #[case::long_payload([header(b"DA2a", 1, 4, 0, 0), vec![0]].concat(), DecodeError::LengthMismatch { declared: 0, actual: 1 })]
+    #[case::huge_payload(header(b"DA2a", 1, 4, 0, u32::MAX), DecodeError::LengthMismatch { declared: u32::MAX, actual: 0 })]
     fn header_validation_reports_the_first_failure(#[case] bytes: Vec<u8>, #[case] expected: DecodeError) {
         assert_eq!(read_blob(BlobKind::Avatar, &bytes).unwrap_err(), expected);
     }

@@ -50,7 +50,7 @@ Lua script
     - Nested lists are an error. Unlike declavatar v1, declavatar2 does not auto-flatten.
     - `da.flatten(...)` accepts nodes or lists of nodes, expands one level and drops `false`. Appending with `table.insert` is preferred where it reads naturally.
     - `da.map(list, fn)` is provided.
-- Child lists may mix node kinds where noted; the builder sorts them by kind (`da.option` accepts animated targets and `da.drive_*`, `da.raw.layer` accepts states and transitions).
+- Child lists may mix node kinds where noted; the builder sorts them by kind (`da.option` accepts animated targets and `da.drive_*`, `da.raw.layer` and `da.raw.machine` accept states, machines and transitions).
 - Options tables are read by taking the known keys; any key left over is an error, so a typo fails at the call site.
 - When two entries of one child list animate the same target, the later one silently wins. `Animation` is a `ValueSet`, and this is its ordinary overwrite behavior.
 - `da.symbol("NAME")` returns whether the client supplied that symbol; use ordinary Lua control flow for conditional compilation.
@@ -117,6 +117,16 @@ Lua script
     - The options map onto what a Modular Avatar Merge Animator takes: `mode` is `"append"` (default) or `"replace"`, `priority` is an integer defaulting to `0`, `mask` is an explicit `da.asset.*` locator. Delete Attached Animator, Match Avatar Write Defaults and Relative Path Root are component-side settings and are not written in a script.
     - `path_mode` is `"absolute"` (default) or `"relative"`. Object paths in a relative controller start at a root the client supplies instead of the avatar root. A bound object such as `da.object("Hat")` is only a path, so the same object used from controllers of both modes names two different objects; the transform does not check for that.
     - Layer names are unique across every controller, including blend-layer children, because drives such as `da.drive_switch("Hat")` refer to a layer by name alone.
+    - The controller `mask` applies to every layer of the controller that has no mask of its own.
+
+#### Layer Options
+
+- Every layer builder (`da.group_layer`, `da.switch_layer`, `da.puppet_layer`, `da.blend_layer`, `da.raw.layer`) takes `weight`, `blending` and `mask` in its options table, besides its own options. They map onto the Unity layer settings of the same name.
+    - `weight` is the weight the layer starts with, in `0..1`, defaulting to `1`. `da.layer_control` changes it at run time.
+    - `blending` is `"override"` (default) or `"additive"`.
+    - `mask` is an explicit `da.asset.*` locator, like the controller `mask`, and replaces the controller mask for that layer.
+- `da.blend_layer(name[, opts], children)` takes an optional options table for this. A puppet layer merged into a blend layer is not a layer of its own, so writing any of these options on it is an error at the `da.blend_layer` call.
+- `da.raw.machine` is not a layer and takes only `default`. IK pass and synced layers are not exposed.
 
 #### Layers
 
@@ -136,7 +146,7 @@ Lua script
     - Compiles to one state holding a 1D linear blend tree, not a motion-time clip: each keyframe becomes a fixed clip placed at threshold `t`, so keyframes are joined with linear interpolation. `driven_by` must be a float, and `t` is any real value rather than normalized time, so a `-1..1` puppet axis is used as is.
     - A target missing from a keyframe is filled by linearly interpolating its neighbours, and held at the ends. Every generated clip writes the same key set.
     - Step and Bezier interpolation are not exposed here; write a `da.raw.keyed_clip` for them. `da.raw.clip({ time_by }, targets)` still contains fixed targets; `time_by` controls playback and does not turn the targets into curves.
-- `da.blend_layer(name, { da.puppet_layer(...), ... })` merges its children into one layer whose single state is a direct blend tree. Merging is explicit; layers written at the top level always stay separate.
+- `da.blend_layer(name[, opts], { da.puppet_layer(...), ... })` merges its children into one layer whose single state is a direct blend tree. Merging is explicit; layers written at the top level always stay separate.
     - Only layers that have no behaviors and are driven by a float can be merged, which is currently puppet layers only. Group and switch layers would need a float mirror of their parameter and are not accepted.
     - Each child becomes a direct field weighted by a float animator parameter fixed at `1.0`; the transform adds that parameter and it is not an expression parameter. The layer is Write Defaults on.
     - Children sum instead of overriding, so a target animated by two children of the same blend layer is an error. Overlap with other layers keeps the usual layer-order override.
@@ -144,12 +154,19 @@ Lua script
 
 #### Raw Layers (`da.raw.*`)
 
-- `da.raw.layer(name, { default = state }, { states and/or transitions })`.
+- `da.raw.layer(name, { default = state }, { states, machines and/or transitions })`. The layer is its root state machine.
+- `da.raw.machine(name, { default = state }, { states, machines and/or transitions })` nests a state machine in a layer or in another machine, and takes the same options and children as `da.raw.layer`.
+    - Names are scoped per machine: a name written in a machine refers to a state or machine it holds directly, and states and machines share one namespace there. The same machine can therefore be built twice by one Lua function with its inner names fixed.
+    - A transition never crosses a machine boundary. It enters a nested machine by naming the machine as `to`, and leaves through `da.raw.exit`; a transition whose `from` names a nested machine is taken when that machine exits (Unity's state machine transition). Direct references into another machine may come later as paths; they are not accepted now.
+    - `da.raw.entry` as `from` writes a conditional entry of the machine holding the transition, and `da.raw.exit` as `to` leaves that machine. `da.raw.exit` as `from`, `da.raw.entry` as `to`, and entry straight to exit are call-site errors.
+    - `default` must name a state held directly, since Unity's default state cannot be a machine. Without it the first state is the default, and a nested machine holding no state of its own is an error.
+    - A state machine behavior is not supported, because VRChat behaviors on a machine would run on every state inside it.
 - `da.raw.state(name, { motion, behaviors }, { outgoing transitions })`.
-- `da.raw.transition([from,] to[, opts], conditions)` with `duration`. `from` is implicit inside a state's child list and required in a layer's child list. Both forms compile to the same flat transition list.
-    - A transition with no conditions leaves once the source state's motion has played to the end. The model carries no exit time; the client sets exit time `1` on a condition-less transition.
+- `da.raw.transition([from,] to[, opts], conditions)` with `duration`. `from` is implicit inside a state's child list and required in a machine's child list. Both forms compile to the same flat transition list of the machine.
+    - A transition leaving a state with no conditions leaves once the state's motion has played to the end. The model carries no exit time; the client sets exit time `1` on a condition-less transition from a state.
+    - A transition leaving `da.raw.entry` or a nested machine is Unity's plain `AnimatorTransition`: it is chosen when its source is passed, is taken at once without conditions, and has no duration, so a written `duration` is an error.
     - Three arguments are ambiguous between `(from, to, conditions)` and `(to, opts, conditions)`. A table in the second position means the options table, a state reference means `to`. The contents of the table are never inspected.
-- State references (`default`, `from`, `to`) accept a name string or a state object. Forward references must be strings.
+- State references (`default`, `from`, `to`) accept a name string or a state object, and `from` and `to` also accept a machine object. An object stands for its name, resolved in the machine holding the reference. Forward references must be strings.
 - Motions: `da.raw.clip([opts,] targets)` with `speed`, `speed_by`, `time_by`; `da.raw.keyed_clip([opts,] keyframes)`; `da.raw.external(asset[, opts])`; `da.raw.blend_tree({ type, x[, y] }, { da.raw.field(position, motion), ... })` with `type` in `linear`, `simple_2d`, `freeform_2d`, `cartesian_2d`; `da.raw.blend_tree({ type = "direct" }, { da.raw.weighted(parameter, motion), ... })`. A direct tree accepts only weighted fields and the others only positioned fields.
 - `da.raw.keyed_clip` takes the clip options plus `length`, `loop_time`, `loop_blend` and `cycle_offset` (`ClipAttributes`), and a list of `da.raw.keyframe(time[, { interpolation }], targets)`.
     - Keyframe times are normalized time in `[0, 1]`, checked at the call site; `length` in seconds maps `1` onto the clip length.
@@ -195,7 +212,7 @@ return da.avatar({
 ### Transform
 
 - `transform::transform(&decl::Avatar) -> Result<avatar::Avatar, TransformErrors>`. `declavatar2::compile(source, chunk_name, &EvaluateOptions)` runs the interpreter and the transform in one call, returning `CompileError::Script` or `CompileError::Transform` on failure. This is the entry point the FFI wraps.
-- The compiled model lives under `avatar`: `Avatar` holds the expression parameters, the `PlayableController`s, the menu and `Externals`. It is concrete over `Compiled`, as `decl` is over `Declared`. States and transitions refer to each other by index; a transition source is `Entry` or a state and a target is a state or `Exit`.
+- The compiled model lives under `avatar`: `Avatar` holds the expression parameters, the `PlayableController`s, the menu and `Externals`. It is concrete over `Compiled`, as `decl` is over `Declared`. States, nested state machines and transitions refer to each other by index. A layer is its root state machine, and a machine index of `None` means the root. A transition source is the `Entry` of a machine, a state or the `MachineExit` of a nested machine, and a target is a state, a nested `Machine` or `Exit`.
 - A `PlayableController` is one `da.controller` in declaration order: its playable layer, `MergeMode`, priority, `PathMode`, the interned mask asset and an `AnimatorController`. An unwritten option takes its default there, not in the declaration. Every controller carries the whole animator parameter list, because a replaced Gesture layer still needs `GestureLeft` and merging by name is harmless.
 - Errors are accumulated across parameter and layer collection, layer compilation and menu items. Within one failing layer or item, checking may stop at the first error; the remaining layers and items are still checked. Any error makes the whole transform fail, so a partial avatar is never returned. `TransformError` carries the `SourceLocation` of the reference that failed, falling back to the layer that holds it.
 - Parameters
@@ -208,9 +225,11 @@ return da.avatar({
     - Group option indices are `1..n` in the written order, and the default state is index `0`. State names are `Default` and the option names.
     - A switch layer compiles to `Disabled` and `Enabled` with `Disabled` as the default state and one transition each way (`If` / `IfNot`). A toggle list whose entry cannot be zeroed (an object reference) is an error that asks for both sides.
     - A puppet layer sorts its keyframes by time and rejects two keyframes at the same time. A target written with different value types across keyframes is an error. Non-interpolable values (bool, int, object reference) that are missing from a keyframe take the previous written value.
-    - Raw layer conditions compile per parameter type: `zero`/`nonzero`/`eq`/`ne` on bool and int, `gt`/`lt` on int and float, anything else is `UnsupportedCondition`. Written values go through `AnimatedValue::cast`, so an int literal against a float parameter is accepted. The default state is the written one, else the first state.
+    - Raw layer conditions compile per parameter type: `zero`/`nonzero`/`eq`/`ne` on bool and int, `gt`/`lt` on int and float, anything else is `UnsupportedCondition`. Written values go through `AnimatedValue::cast`, so an int literal against a float parameter is accepted. The default state of each machine is the written one, else its first state.
+    - A raw layer compiles its nested machines into `AnimatorLayer.machines` in depth-first order, so a machine follows its parent. Transform errors name a machine by its path from the layer, such as `Emote/Dance`.
     - Clip options on the motion of a state become the state's `Playback` (`speed`, `speed_by`, `time_by`). Inside a blend tree only `speed` is meaningful and it becomes the field's speed; `speed_by` and `time_by` there are errors.
     - Group and switch transitions have duration `0.0`. Raw transitions preserve the written `duration`, defaulting to `0.0`.
+    - Every compiled layer carries `LayerSettings`: the written weight, blending and interned mask, or weight `1`, override and no mask of its own.
     - Write Defaults is on only for the generated state of a blend layer; group, switch, puppet and raw states use off. The raw Lua API does not expose a Write Defaults option.
 - State behaviors
     - A layer control resolves to a `LayerRef`: the index of the controller in `Avatar.controllers` and of the layer in that controller. The controller holding the state must be Action, FX, Gesture or Additive, and the named layer must belong to that same controller. A layer of another playable layer and a layer of another controller of the same playable layer (a different priority, say) are separate errors; the latter names the controller it found by playable layer and priority. A child of a blend layer is merged and cannot be named. Each is a located error, as is an unknown layer.

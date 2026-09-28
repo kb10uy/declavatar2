@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 
 use crate::{
     avatar::controller::{
-        AnimatorCondition, AnimatorLayer, AnimatorState, AnimatorTransition, BlendTree, Clip, DirectBlendTree, DirectField, Motion, ParameterRef,
-        ParametricBlendTree, ParametricField, Playback, TransitionSource, TransitionTarget,
+        AnimatorCondition, AnimatorLayer, AnimatorState, AnimatorTransition, BlendTree, Clip, DirectBlendTree, DirectField, LayerSettings, Motion,
+        ParameterRef, ParametricBlendTree, ParametricField, Playback, TransitionSource, TransitionTarget,
     },
     core::{phase::Declared, resolution::Unresolved, value_set::MaybeZeroableEntry},
     decl::{
@@ -25,20 +25,29 @@ use crate::{
 };
 
 pub(crate) fn compile(context: &mut Context, layer: &Layer) -> Result<AnimatorLayer, TransformError> {
-    match layer {
+    let mut compiled = match layer {
         Layer::Group(group) => self::group(context, group),
         Layer::Switch(switch) => self::switch(context, switch),
         Layer::Puppet(puppet) => self::puppet(context, puppet),
         Layer::Blend(blend) => self::blend(context, blend),
-        Layer::Raw(raw) => raw::compile(context, raw),
+        Layer::Raw(raw) => raw::compile(context, &raw.machine),
     }
-    .map_err(|error| error.or_at(layer.at()))
+    .map_err(|error| error.or_at(layer.at()))?;
+
+    let written = layer.settings();
+    compiled.settings = LayerSettings {
+        weight: written.weight.unwrap_or(1.0),
+        blending: written.blending.unwrap_or_default(),
+        mask: written.mask.as_ref().map(|mask| context.externals.assets.intern(mask.clone())),
+    };
+    Ok(compiled)
 }
 
 /// A state that plays the written targets as one fixed clip.
 pub(crate) fn state(context: &mut Context, name: impl Into<String>, content: &Content, write_defaults: bool) -> Result<AnimatorState, TransformError> {
     Ok(AnimatorState {
         name: name.into(),
+        machine: None,
         motion: Some(Motion::Clip(Clip::Inline(InlineAnimation::Fixed(context.animation(&content.animation)?)))),
         playback: Playback::default(),
         write_defaults,
@@ -89,7 +98,7 @@ fn group(context: &mut Context, group: &GroupLayer) -> Result<AnimatorLayer, Tra
         let equals = || vec![AnimatorCondition::Equals(parameter.clone(), value)];
         let differs = || vec![AnimatorCondition::NotEqual(parameter.clone(), value)];
         if symmetric {
-            transitions.push(transition(TransitionSource::Entry, TransitionTarget::State(index), equals()));
+            transitions.push(transition(TransitionSource::Entry(None), TransitionTarget::State(index), equals()));
         } else {
             transitions.push(transition(TransitionSource::State(0), TransitionTarget::State(index), equals()));
             transitions.push(transition(TransitionSource::State(index), TransitionTarget::State(0), differs()));
@@ -116,7 +125,9 @@ fn group(context: &mut Context, group: &GroupLayer) -> Result<AnimatorLayer, Tra
 
     Ok(AnimatorLayer {
         name: group.name.clone(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
+        machines: vec![],
         states,
         transitions,
     })
@@ -147,7 +158,9 @@ fn switch(context: &mut Context, switch: &SwitchLayer) -> Result<AnimatorLayer, 
 
     Ok(AnimatorLayer {
         name: switch.name.clone(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
+        machines: vec![],
         states: vec![state(context, "Disabled", &off, false)?, state(context, "Enabled", &on, false)?],
         transitions: vec![
             transition(
@@ -168,9 +181,12 @@ fn puppet(context: &mut Context, puppet: &PuppetLayer) -> Result<AnimatorLayer, 
     let (_, tree, _) = puppet_tree(context, puppet)?;
     Ok(AnimatorLayer {
         name: puppet.name.clone(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
+        machines: vec![],
         states: vec![AnimatorState {
             name: puppet.name.clone(),
+            machine: None,
             motion: Some(Motion::BlendTree(BlendTree::Parametric(tree))),
             playback: Playback::default(),
             write_defaults: false,
@@ -285,9 +301,12 @@ fn blend(context: &mut Context, blend: &BlendLayer) -> Result<AnimatorLayer, Tra
 
     Ok(AnimatorLayer {
         name: blend.name.clone(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
+        machines: vec![],
         states: vec![AnimatorState {
             name: blend.name.clone(),
+            machine: None,
             motion: Some(Motion::BlendTree(BlendTree::Direct(DirectBlendTree { fields }))),
             playback: Playback::default(),
             write_defaults: true,
@@ -436,6 +455,7 @@ mod tests {
     fn expressions(symmetric: Option<bool>) -> GroupLayer {
         GroupLayer {
             name: "Expressions".into(),
+            settings: Default::default(),
             driven_by: Some("Emote".to_owned().into()),
             symmetric,
             default: Some(content([shape("eyelid", 0.3)])),
@@ -494,12 +514,12 @@ mod tests {
             compiled.transitions,
             vec![
                 transition(
-                    TransitionSource::Entry,
+                    TransitionSource::Entry(None),
                     TransitionTarget::State(1),
                     vec![AnimatorCondition::Equals(emote.clone(), 1)]
                 ),
                 transition(
-                    TransitionSource::Entry,
+                    TransitionSource::Entry(None),
                     TransitionTarget::State(2),
                     vec![AnimatorCondition::Equals(emote.clone(), 2)]
                 ),
@@ -560,6 +580,7 @@ mod tests {
     fn a_group_layer_without_a_driver_follows_a_parameter_of_its_own_name() {
         let layer = GroupLayer {
             name: "Emote".into(),
+            settings: Default::default(),
             driven_by: None,
             ..expressions(None)
         };
@@ -617,6 +638,7 @@ mod tests {
     fn hat(content: SwitchContent) -> SwitchLayer {
         SwitchLayer {
             name: "Hat".into(),
+            settings: Default::default(),
             driven_by: None,
             content,
             at: located_at(20),
@@ -689,6 +711,7 @@ mod tests {
     fn wink(keyframes: Vec<PuppetKeyframe>) -> PuppetLayer {
         PuppetLayer {
             name: "Wink".into(),
+            settings: Default::default(),
             driven_by: None,
             keyframes,
             at: located_at(30),
@@ -706,6 +729,7 @@ mod tests {
             .map(|field| {
                 let state = AnimatorState {
                     name: String::new(),
+                    machine: None,
                     motion: Some(field.motion.clone()),
                     playback: Playback::default(),
                     write_defaults: false,
@@ -798,6 +822,7 @@ mod tests {
     fn face(puppets: Vec<PuppetLayer>) -> BlendLayer {
         BlendLayer {
             name: "Face".into(),
+            settings: Default::default(),
             puppets,
             at: located_at(40),
         }
@@ -809,6 +834,7 @@ mod tests {
             wink(vec![keyframe(0.0, [shape("wink", 0.0)]), keyframe(1.0, [shape("wink", 1.0)])]),
             PuppetLayer {
                 name: "Brow".into(),
+                settings: Default::default(),
                 keyframes: vec![keyframe(0.0, [shape("brow", 0.0)]), keyframe(1.0, [shape("brow", 1.0)])],
                 ..wink(vec![])
             },
@@ -859,6 +885,7 @@ mod tests {
             wink(vec![keyframe(0.0, [shape("wink", 0.0)])]),
             PuppetLayer {
                 name: "Brow".into(),
+                settings: Default::default(),
                 keyframes: vec![keyframe(0.0, [shape("wink", 1.0)])],
                 at: located_at(42),
                 ..wink(vec![])

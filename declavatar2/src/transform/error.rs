@@ -138,11 +138,23 @@ pub enum TransformErrorKind {
     #[error("children of blend layer `{layer}` both animate {target}, and children sum instead of overriding")]
     OverlappingBlendTargets { layer: String, target: String },
 
-    #[error("state `{state}` of `{layer}` is declared more than once")]
-    DuplicateState { layer: String, state: String },
+    #[error("`{name}` names more than one state or state machine in `{machine}`")]
+    DuplicateState { machine: String, name: String },
 
-    #[error("layer `{layer}` has no state `{state}`")]
-    UnknownState { layer: String, state: String },
+    #[error("`{machine}` holds no state or state machine named `{name}`")]
+    UnknownState { machine: String, name: String },
+
+    #[error("the default of `{machine}` must be a state, but `{name}` is a state machine")]
+    DefaultIsMachine { machine: String, name: String },
+
+    #[error("state machine `{machine}` holds no state of its own to be entered with")]
+    MachineWithoutState { machine: String },
+
+    #[error("a transition leaving {leaving} is taken at once, so it has no duration")]
+    ImmediateTransitionDuration { leaving: String },
+
+    #[error("the entry of `{machine}` leads to a state or a state machine, not to its exit")]
+    EntryLeadsToExit { machine: String },
 
     #[error("`{condition}` cannot be applied to parameter `{parameter}` of type {value_type:?}")]
     UnsupportedCondition {

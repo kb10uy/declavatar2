@@ -83,6 +83,7 @@ mod tests {
                 vec![
                     Layer::Group(GroupLayer {
                         name: "Expressions".into(),
+                        settings: Default::default(),
                         driven_by: Some(Unresolved::new("Emote".into())),
                         symmetric: None,
                         default: Some(Content {
@@ -101,6 +102,7 @@ mod tests {
                     }),
                     Layer::Switch(SwitchLayer {
                         name: "Hat".into(),
+                        settings: Default::default(),
                         driven_by: Some(Unresolved::new("Hat".into())),
                         content: SwitchContent::Toggle(Content {
                             animation: Animation::from([active("Hat", true)]),
