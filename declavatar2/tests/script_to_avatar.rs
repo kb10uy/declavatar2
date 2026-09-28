@@ -4,7 +4,7 @@ use declavatar2::{
     CompileError, EvaluateOptions,
     avatar::{
         Avatar, Behavior, LayerRef,
-        controller::{AnimatorCondition, Clip, Motion, TransitionSource, TransitionTarget},
+        controller::{AnimatorCondition, Clip, Motion, StateMachine, TransitionSource, TransitionTarget},
         menu::{MenuDirection, MenuItem},
     },
     compile,
@@ -711,6 +711,92 @@ return da.avatar({
 )]
 fn a_layer_name_written_twice_is_rejected_before_a_layer_control_could_pick_one(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(errors_of(source), vec![expected]);
+}
+
+#[rstest]
+fn a_machine_built_by_a_lua_function_can_be_nested_more_than_once() {
+    let source = r#"local da = require "declavatar"
+
+local function dance(name, value)
+    return da.raw.machine(name, {
+        da.raw.state("Loop", {}, { da.raw.transition(da.raw.exit, { da.raw.cond.ne("Emote", value) }) }),
+    })
+end
+
+local a = dance("A", 1)
+return da.avatar({
+    parameters = { da.int("Emote") },
+    controllers = {
+        da.controller("fx", {
+            da.raw.layer("Emote", {}, {
+                da.raw.state("Idle", {}, {
+                    da.raw.transition(a, { da.raw.cond.eq("Emote", 1) }),
+                    da.raw.transition("B", { da.raw.cond.eq("Emote", 2) }),
+                }),
+                a,
+                dance("B", 2),
+                da.raw.transition(a, "Idle", {}),
+                da.raw.transition("B", da.raw.exit, {}),
+            }),
+        }),
+    },
+})
+"#;
+    let avatar = compile(source, "avatar.lua", &EvaluateOptions::new()).expect("the script should compile");
+    let layer = &avatar.controllers[0].controller.layers[0];
+
+    assert_eq!(
+        layer.machines,
+        vec![
+            StateMachine {
+                name: "A".into(),
+                parent: None,
+                default_state: Some(1),
+            },
+            StateMachine {
+                name: "B".into(),
+                parent: None,
+                default_state: Some(2),
+            },
+        ]
+    );
+    assert_eq!(
+        layer.states.iter().map(|state| (state.name.as_str(), state.machine)).collect::<Vec<_>>(),
+        [("Idle", None), ("Loop", Some(0)), ("Loop", Some(1))]
+    );
+    assert_eq!(
+        layer.transitions.iter().map(|transition| (transition.from, transition.to)).collect::<Vec<_>>(),
+        [
+            (TransitionSource::State(1), TransitionTarget::Exit),
+            (TransitionSource::State(2), TransitionTarget::Exit),
+            (TransitionSource::State(0), TransitionTarget::Machine(0)),
+            (TransitionSource::State(0), TransitionTarget::Machine(1)),
+            (TransitionSource::MachineExit(0), TransitionTarget::State(0)),
+            (TransitionSource::MachineExit(1), TransitionTarget::Exit),
+        ]
+    );
+}
+
+#[rstest]
+fn a_name_outside_the_machine_is_reported_where_it_was_written() {
+    let errors = errors_of(
+        r#"local da = require "declavatar"
+return da.avatar({
+    controllers = {
+        da.controller("fx", {
+            da.raw.layer("Emote", {}, {
+                da.raw.state("Idle"),
+                da.raw.machine("Dance", {
+                    da.raw.state("Step", {}, { da.raw.transition("Idle", {}) }),
+                }),
+            }),
+        }),
+    },
+})
+"#,
+    );
+
+    assert_eq!(errors, vec!["avatar.lua:8: `Emote/Dance` holds no state or state machine named `Idle`"]);
 }
 
 #[rstest]

@@ -141,14 +141,14 @@ mod definition_tests {
             .unwrap_or_else(|error| panic!("`{name}` should load: {error}"))
     }
 
-    /// Every function the module holds, named by the path a script writes to reach it.
+    /// Every function and value the module holds, named by the path a script writes to reach it.
     fn registered(table: &Table, prefix: &str) -> BTreeSet<String> {
         let mut paths = BTreeSet::new();
         for pair in table.pairs::<String, Value>() {
             let (key, value) = pair.expect("the module should have string keys");
             let path = if prefix.is_empty() { key } else { format!("{prefix}.{key}") };
             match value {
-                Value::Function(_) => {
+                Value::Function(_) | Value::UserData(_) => {
                     paths.insert(path);
                 }
                 Value::Table(inner) => paths.extend(registered(&inner, &path)),
@@ -158,14 +158,19 @@ mod definition_tests {
         paths
     }
 
-    /// Every function the definitions declare on the given table.
+    /// Every function and value the definitions declare on the given table. A table assigned `{}` is only a namespace.
     fn documented(source: &str, receiver: &str) -> BTreeSet<String> {
-        let prefix = format!("function {receiver}.");
+        let function = format!("function {receiver}.");
+        let value = format!("{receiver}.");
         source
             .lines()
-            .filter_map(|line| line.strip_prefix(&prefix))
-            .filter_map(|rest| rest.split('(').next())
-            .map(str::to_owned)
+            .filter_map(|line| match line.strip_prefix(&function) {
+                Some(rest) => rest.split('(').next().map(str::to_owned),
+                None => {
+                    let (path, assigned) = line.strip_prefix(&value)?.split_once(" = ")?;
+                    (assigned != "{}").then(|| path.to_owned())
+                }
+            })
             .collect()
     }
 

@@ -2,7 +2,7 @@ use crate::{
     core::resolution::{SourceLocation, Unresolved},
     decl::{
         behavior::{Animation, Content},
-        raw::RawLayer,
+        raw::RawMachine,
     },
 };
 
@@ -13,7 +13,7 @@ pub enum Layer {
     Switch(SwitchLayer),
     Puppet(PuppetLayer),
     Blend(BlendLayer),
-    Raw(RawLayer),
+    Raw(RawMachine),
 }
 
 impl Layer {

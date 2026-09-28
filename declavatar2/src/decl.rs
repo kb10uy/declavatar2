@@ -13,6 +13,6 @@ pub use layer::{BlendLayer, GroupLayer, GroupOption, Layer, PuppetKeyframe, Pupp
 pub use menu::{Axis, AxisTarget, Direction, FourAxes, MenuItem, TwoAxes};
 pub use parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup};
 pub use raw::{
-    BlendTree, BlendTreeField, BlendTreeType, ClipOptions, Condition, DirectBlendTree, DirectBlendTreeField, Motion, ParametricBlendTree, RawLayer, RawState,
-    RawTransition,
+    BlendTree, BlendTreeField, BlendTreeType, ClipOptions, Condition, DirectBlendTree, DirectBlendTreeField, Motion, ParametricBlendTree, RawMachine, RawState,
+    RawTransition, TransitionSource, TransitionTarget,
 };

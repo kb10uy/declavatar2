@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 use crate::{
     avatar::controller::{
         AnimatorCondition, AnimatorLayer, AnimatorState, AnimatorTransition, BlendTree, Clip, DirectBlendTree, DirectField, Motion, ParametricBlendTree,
-        ParametricField, Playback, TransitionSource, TransitionTarget,
+        ParametricField, Playback, StateMachine, TransitionSource, TransitionTarget,
     },
     core::resolution::{SourceLocation, Unresolved},
-    decl::raw::{self, ClipOptions, Condition, RawLayer},
+    decl::raw::{self, ClipOptions, Condition, RawMachine},
     transform::{
         behavior::cast,
         context::Context,
@@ -15,34 +15,42 @@ use crate::{
     unity::{animation::InlineAnimation, value::AnimatedValue, value::AnimatedValueType},
 };
 
-pub(crate) fn compile(context: &mut Context, raw: &RawLayer) -> Result<AnimatorLayer, TransformError> {
-    let mut index = BTreeMap::new();
-    for (offset, state) in raw.states.iter().enumerate() {
-        if index.insert(state.name.clone(), offset).is_some() {
+pub(crate) fn compile(context: &mut Context, raw: &RawMachine) -> Result<AnimatorLayer, TransformError> {
+    let mut layer = AnimatorLayer {
+        name: raw.name.clone(),
+        default_state: None,
+        machines: Vec::new(),
+        states: Vec::new(),
+        transitions: Vec::new(),
+    };
+    layer.default_state = machine(context, &mut layer, raw, None, &raw.name)?;
+    Ok(layer)
+}
+
+/// Something a machine holds directly, which a name written in that machine refers to.
+#[derive(Debug, Clone, Copy)]
+enum Node {
+    State(usize),
+    Machine(usize),
+}
+
+/// Compiles the states, nested machines and transitions of one machine into `layer` and returns its default state.
+fn machine(context: &mut Context, layer: &mut AnimatorLayer, raw: &RawMachine, id: Option<usize>, path: &str) -> Result<Option<usize>, TransformError> {
+    let mut scope = BTreeMap::new();
+    let mut declare = |name: &str, node: Node, at: Option<&SourceLocation>| {
+        if scope.insert(name.to_owned(), node).is_some() {
             return Err(TransformErrorKind::DuplicateState {
-                layer: raw.name.clone(),
-                state: state.name.clone(),
+                machine: path.to_owned(),
+                name: name.to_owned(),
             }
-            .at(state.at.clone()));
+            .at(at.cloned()));
         }
-    }
-    let lookup = |reference: &Unresolved<String>| {
-        index.get(&reference.value).copied().ok_or_else(|| {
-            TransformErrorKind::UnknownState {
-                layer: raw.name.clone(),
-                state: reference.value.clone(),
-            }
-            .at(reference.at.clone())
-        })
+        Ok(())
     };
 
-    let default_state = match &raw.default_state {
-        Some(reference) => Some(lookup(reference)?),
-        None => (!raw.states.is_empty()).then_some(0),
-    };
-
-    let mut states = Vec::new();
+    let first_state = (!raw.states.is_empty()).then_some(layer.states.len());
     for written in &raw.states {
+        declare(&written.name, Node::State(layer.states.len()), written.at.as_ref())?;
         let (motion, playback) = match &written.motion {
             Some(motion) => {
                 let (motion, playback) = state_motion(context, motion).map_err(|error| error.or_at(written.at.as_ref()))?;
@@ -50,9 +58,9 @@ pub(crate) fn compile(context: &mut Context, raw: &RawLayer) -> Result<AnimatorL
             }
             None => (None, Playback::default()),
         };
-        states.push(AnimatorState {
+        layer.states.push(AnimatorState {
             name: written.name.clone(),
-            machine: None,
+            machine: id,
             motion,
             playback,
             write_defaults: false,
@@ -60,11 +68,77 @@ pub(crate) fn compile(context: &mut Context, raw: &RawLayer) -> Result<AnimatorL
         });
     }
 
-    let mut transitions = Vec::new();
+    for nested in &raw.machines {
+        let index = layer.machines.len();
+        declare(&nested.name, Node::Machine(index), nested.at.as_ref())?;
+        layer.machines.push(StateMachine {
+            name: nested.name.clone(),
+            parent: id,
+            default_state: None,
+        });
+        let nested_path = format!("{path}/{}", nested.name);
+        let default_state = machine(context, layer, nested, Some(index), &nested_path)?;
+        if default_state.is_none() {
+            return Err(TransformErrorKind::MachineWithoutState { machine: nested_path }.at(nested.at.clone()));
+        }
+        layer.machines[index].default_state = default_state;
+    }
+
+    let lookup = |reference: &Unresolved<String>| {
+        scope.get(&reference.value).copied().ok_or_else(|| {
+            TransformErrorKind::UnknownState {
+                machine: path.to_owned(),
+                name: reference.value.clone(),
+            }
+            .at(reference.at.clone())
+        })
+    };
+
+    let default_state = match &raw.default_state {
+        Some(reference) => match lookup(reference)? {
+            Node::State(index) => Some(index),
+            Node::Machine(_) => {
+                return Err(TransformErrorKind::DefaultIsMachine {
+                    machine: path.to_owned(),
+                    name: reference.value.clone(),
+                }
+                .at(reference.at.clone()));
+            }
+        },
+        None => first_state,
+    };
+
     for written in &raw.transitions {
-        transitions.push(AnimatorTransition {
-            from: TransitionSource::State(lookup(&written.from)?),
-            to: TransitionTarget::State(lookup(&written.to)?),
+        let immediate = |leaving: String, at: Option<&SourceLocation>| match written.duration {
+            Some(_) => Err(TransformErrorKind::ImmediateTransitionDuration { leaving }.at(at.or(raw.at.as_ref()).cloned())),
+            None => Ok(()),
+        };
+        let from = match &written.from {
+            raw::TransitionSource::Entry => {
+                immediate(format!("the entry of `{path}`"), None)?;
+                TransitionSource::Entry(id)
+            }
+            raw::TransitionSource::Node(reference) => match lookup(reference)? {
+                Node::State(index) => TransitionSource::State(index),
+                Node::Machine(index) => {
+                    immediate(format!("state machine `{path}/{}`", reference.value), reference.at.as_ref())?;
+                    TransitionSource::MachineExit(index)
+                }
+            },
+        };
+        let to = match &written.to {
+            raw::TransitionTarget::Exit => TransitionTarget::Exit,
+            raw::TransitionTarget::Node(reference) => match lookup(reference)? {
+                Node::State(index) => TransitionTarget::State(index),
+                Node::Machine(index) => TransitionTarget::Machine(index),
+            },
+        };
+        if let (TransitionSource::Entry(_), TransitionTarget::Exit) = (from, to) {
+            return Err(TransformErrorKind::EntryLeadsToExit { machine: path.to_owned() }.at(raw.at.clone()));
+        }
+        layer.transitions.push(AnimatorTransition {
+            from,
+            to,
             duration: written.duration.unwrap_or(0.0),
             conditions: written
                 .conditions
@@ -74,13 +148,7 @@ pub(crate) fn compile(context: &mut Context, raw: &RawLayer) -> Result<AnimatorL
         });
     }
 
-    Ok(AnimatorLayer {
-        name: raw.name.clone(),
-        default_state,
-        machines: vec![],
-        states,
-        transitions,
-    })
+    Ok(default_state)
 }
 
 /// The motion of a state, with the clip options moved onto the state where Unity keeps them.
@@ -251,7 +319,10 @@ mod tests {
             Avatar,
             behavior::Animation,
             parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue},
-            raw::{BlendTreeField, BlendTreeType, DirectBlendTreeField, ParametricBlendTree as RawParametricBlendTree, RawState, RawTransition},
+            raw::{
+                BlendTreeField, BlendTreeType, DirectBlendTreeField, ParametricBlendTree as RawParametricBlendTree, RawState, RawTransition,
+                TransitionSource as RawSource, TransitionTarget as RawTarget,
+            },
         },
         transform::layer::located_at,
         unity::external::AssetLocator,
@@ -314,13 +385,42 @@ mod tests {
         }
     }
 
-    fn layer(default_state: Option<Unresolved<String>>, states: Vec<RawState>, transitions: Vec<RawTransition>) -> RawLayer {
-        RawLayer {
+    fn layer(default_state: Option<Unresolved<String>>, states: Vec<RawState>, transitions: Vec<RawTransition>) -> RawMachine {
+        RawMachine {
             name: "Raw".into(),
             default_state,
             states,
+            machines: vec![],
             transitions,
             at: located_at(50),
+        }
+    }
+
+    fn nested(name: &str, states: Vec<RawState>, machines: Vec<RawMachine>, transitions: Vec<RawTransition>, line: u32) -> RawMachine {
+        RawMachine {
+            name: name.into(),
+            default_state: None,
+            states,
+            machines,
+            transitions,
+            at: located_at(line),
+        }
+    }
+
+    fn from(name: &str) -> RawSource {
+        RawSource::Node(name.to_owned().into())
+    }
+
+    fn to(name: &str) -> RawTarget {
+        RawTarget::Node(name.to_owned().into())
+    }
+
+    fn edge(from: RawSource, to: RawTarget) -> RawTransition {
+        RawTransition {
+            from,
+            to,
+            duration: None,
+            conditions: vec![],
         }
     }
 
@@ -330,8 +430,8 @@ mod tests {
             Some("B".to_owned().into()),
             vec![state("A", Some(clip(ClipOptions::default())), 51), state("B", None, 52)],
             vec![RawTransition {
-                from: "A".to_owned().into(),
-                to: "B".to_owned().into(),
+                from: from("A"),
+                to: to("B"),
                 duration: Some(0.25),
                 conditions: vec![Condition::NonZero("Hat".to_owned().into())],
             }],
@@ -364,19 +464,153 @@ mod tests {
     }
 
     #[rstest]
+    fn nested_machines_follow_their_parents_and_hold_their_own_states() {
+        let finale = nested("Finale", vec![state("Bow", None, 61)], vec![], vec![edge(from("Bow"), RawTarget::Exit)], 60);
+        let dance = nested(
+            "Dance",
+            vec![state("Step", None, 56)],
+            vec![finale],
+            vec![edge(RawSource::Entry, to("Finale")), edge(from("Finale"), to("Step"))],
+            55,
+        );
+        let mut raw = layer(
+            None,
+            vec![state("Idle", None, 51)],
+            vec![edge(from("Idle"), to("Dance")), edge(from("Dance"), RawTarget::Exit)],
+        );
+        raw.machines.push(dance);
+        let compiled = compile(&mut context(), &raw).unwrap();
+
+        assert_eq!(compiled.default_state, Some(0));
+        assert_eq!(
+            compiled.machines,
+            vec![
+                StateMachine {
+                    name: "Dance".into(),
+                    parent: None,
+                    default_state: Some(1),
+                },
+                StateMachine {
+                    name: "Finale".into(),
+                    parent: Some(0),
+                    default_state: Some(2),
+                },
+            ]
+        );
+        assert_eq!(
+            compiled.states.iter().map(|state| (state.name.as_str(), state.machine)).collect::<Vec<_>>(),
+            [("Idle", None), ("Step", Some(0)), ("Bow", Some(1))]
+        );
+        assert_eq!(
+            compiled
+                .transitions
+                .iter()
+                .map(|transition| (transition.from, transition.to))
+                .collect::<Vec<_>>(),
+            [
+                (TransitionSource::State(2), TransitionTarget::Exit),
+                (TransitionSource::Entry(Some(0)), TransitionTarget::Machine(1)),
+                (TransitionSource::MachineExit(1), TransitionTarget::State(1)),
+                (TransitionSource::State(0), TransitionTarget::Machine(0)),
+                (TransitionSource::MachineExit(0), TransitionTarget::Exit),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn names_are_scoped_to_the_machine_holding_them() {
+        let loop_in = |name: &str, line: u32| {
+            nested(
+                name,
+                vec![state("Loop", None, line + 1)],
+                vec![],
+                vec![edge(from("Loop"), RawTarget::Exit)],
+                line,
+            )
+        };
+        let mut raw = layer(None, vec![state("Loop", None, 51)], vec![edge(RawSource::Entry, to("A"))]);
+        raw.machines = vec![loop_in("A", 55), loop_in("B", 60)];
+        let compiled = compile(&mut context(), &raw).unwrap();
+
+        assert_eq!(compiled.states.iter().filter(|state| state.name == "Loop").count(), 3);
+        assert_eq!(
+            compiled
+                .transitions
+                .iter()
+                .map(|transition| (transition.from, transition.to))
+                .collect::<Vec<_>>(),
+            [
+                (TransitionSource::State(1), TransitionTarget::Exit),
+                (TransitionSource::State(2), TransitionTarget::Exit),
+                (TransitionSource::Entry(None), TransitionTarget::Machine(0)),
+            ]
+        );
+    }
+
+    #[rstest]
     #[case::duplicate(
         layer(None, vec![state("A", None, 51), state("A", None, 52)], vec![]),
-        TransformErrorKind::DuplicateState { layer: "Raw".into(), state: "A".into() }.at(located_at(52)),
+        TransformErrorKind::DuplicateState { machine: "Raw".into(), name: "A".into() }.at(located_at(52)),
     )]
     #[case::unknown_default(
         layer(Some(located("C", 53)), vec![state("A", None, 51)], vec![]),
-        TransformErrorKind::UnknownState { layer: "Raw".into(), state: "C".into() }.at(located_at(53)),
+        TransformErrorKind::UnknownState { machine: "Raw".into(), name: "C".into() }.at(located_at(53)),
     )]
     #[case::unknown_target(
-        layer(None, vec![state("A", None, 51)], vec![RawTransition { from: "A".to_owned().into(), to: located("C", 54), duration: None, conditions: vec![] }]),
-        TransformErrorKind::UnknownState { layer: "Raw".into(), state: "C".into() }.at(located_at(54)),
+        layer(None, vec![state("A", None, 51)], vec![RawTransition { from: from("A"), to: RawTarget::Node(located("C", 54)), duration: None, conditions: vec![] }]),
+        TransformErrorKind::UnknownState { machine: "Raw".into(), name: "C".into() }.at(located_at(54)),
     )]
-    fn a_bad_state_reference_is_reported(#[case] raw: RawLayer, #[case] expected: TransformError) {
+    #[case::state_of_a_nested_machine(
+        RawMachine {
+            machines: vec![nested("M", vec![state("Inner", None, 56)], vec![], vec![], 55)],
+            ..layer(None, vec![state("A", None, 51)], vec![RawTransition { from: from("A"), to: RawTarget::Node(located("Inner", 57)), duration: None, conditions: vec![] }])
+        },
+        TransformErrorKind::UnknownState { machine: "Raw".into(), name: "Inner".into() }.at(located_at(57)),
+    )]
+    #[case::state_of_the_parent(
+        RawMachine {
+            machines: vec![nested("M", vec![state("Inner", None, 56)], vec![], vec![RawTransition { from: from("Inner"), to: RawTarget::Node(located("A", 57)), duration: None, conditions: vec![] }], 55)],
+            ..layer(None, vec![state("A", None, 51)], vec![])
+        },
+        TransformErrorKind::UnknownState { machine: "Raw/M".into(), name: "A".into() }.at(located_at(57)),
+    )]
+    #[case::state_and_machine_of_one_name(
+        RawMachine {
+            machines: vec![nested("A", vec![state("Inner", None, 56)], vec![], vec![], 55)],
+            ..layer(None, vec![state("A", None, 51)], vec![])
+        },
+        TransformErrorKind::DuplicateState { machine: "Raw".into(), name: "A".into() }.at(located_at(55)),
+    )]
+    #[case::machine_as_default(
+        RawMachine {
+            machines: vec![nested("M", vec![state("Inner", None, 56)], vec![], vec![], 55)],
+            ..layer(Some(located("M", 53)), vec![state("A", None, 51)], vec![])
+        },
+        TransformErrorKind::DefaultIsMachine { machine: "Raw".into(), name: "M".into() }.at(located_at(53)),
+    )]
+    #[case::machine_without_state(
+        RawMachine {
+            machines: vec![nested("M", vec![], vec![nested("N", vec![state("Inner", None, 57)], vec![], vec![], 56)], vec![], 55)],
+            ..layer(None, vec![state("A", None, 51)], vec![])
+        },
+        TransformErrorKind::MachineWithoutState { machine: "Raw/M".into() }.at(located_at(55)),
+    )]
+    #[case::timed_machine_exit(
+        RawMachine {
+            machines: vec![nested("M", vec![state("Inner", None, 56)], vec![], vec![], 55)],
+            ..layer(None, vec![state("A", None, 51)], vec![RawTransition { from: RawSource::Node(located("M", 58)), to: to("A"), duration: Some(0.5), conditions: vec![] }])
+        },
+        TransformErrorKind::ImmediateTransitionDuration { leaving: "state machine `Raw/M`".into() }.at(located_at(58)),
+    )]
+    #[case::timed_entry(
+        layer(None, vec![state("A", None, 51)], vec![RawTransition { from: RawSource::Entry, to: to("A"), duration: Some(0.5), conditions: vec![] }]),
+        TransformErrorKind::ImmediateTransitionDuration { leaving: "the entry of `Raw`".into() }.at(located_at(50)),
+    )]
+    #[case::entry_to_exit(
+        layer(None, vec![state("A", None, 51)], vec![edge(RawSource::Entry, RawTarget::Exit)]),
+        TransformErrorKind::EntryLeadsToExit { machine: "Raw".into() }.at(located_at(50)),
+    )]
+    fn a_bad_state_reference_is_reported(#[case] raw: RawMachine, #[case] expected: TransformError) {
         assert_eq!(compile(&mut context(), &raw).unwrap_err(), expected);
     }
 

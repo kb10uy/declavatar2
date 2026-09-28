@@ -9,20 +9,24 @@ use crate::{
 
 pub use crate::unity::animator::BlendTreeType;
 
-/// Layer written as a state machine.
+/// State machine written with `da.raw.layer` or `da.raw.machine`. A raw layer is its root machine, named after the layer.
+///
+/// States and nested machines share one namespace per machine, and a name written in a machine refers to
+/// something that machine holds directly.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RawLayer {
+pub struct RawMachine {
     pub name: String,
     pub default_state: Option<Unresolved<String>>,
     pub states: Vec<RawState>,
+    pub machines: Vec<RawMachine>,
 
-    /// Every transition of this layer, including the ones written inside a state.
+    /// Every transition of this machine, including the ones written inside its states.
     pub transitions: Vec<RawTransition>,
 
     pub at: Option<SourceLocation>,
 }
 
-/// One state of a `RawLayer`.
+/// One state of a `RawMachine`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawState {
     pub name: String,
@@ -31,13 +35,33 @@ pub struct RawState {
     pub at: Option<SourceLocation>,
 }
 
-/// Transition between two states of a `RawLayer`.
+/// Transition between two nodes of one `RawMachine`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawTransition {
-    pub from: Unresolved<String>,
-    pub to: Unresolved<String>,
+    pub from: TransitionSource,
+    pub to: TransitionTarget,
     pub duration: Option<f64>,
     pub conditions: Vec<Condition>,
+}
+
+/// Where a transition leaves from.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransitionSource {
+    /// The entry of the machine holding the transition.
+    Entry,
+
+    /// A state, or the exit of a nested machine, named in the machine holding the transition.
+    Node(Unresolved<String>),
+}
+
+/// Where a transition leads.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransitionTarget {
+    /// The exit of the machine holding the transition.
+    Exit,
+
+    /// A state, or a nested machine entered through its entry, named in the machine holding the transition.
+    Node(Unresolved<String>),
 }
 
 /// What a state plays.
