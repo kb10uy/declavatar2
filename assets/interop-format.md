@@ -14,7 +14,7 @@ Every blob starts with 16 bytes. All multi-byte integers in the whole blob are l
 |---|---|---|---|
 | 0 | 4 | `magic` | `"DA2a"` (`44 41 32 61`) for Avatar, `"DA2d"` (`44 41 32 64`) for Diagnostics |
 | 4 | 2 | `schema_version` | u16. Version of the encoding rules below. Currently `1`. |
-| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `3` for Avatar and `1` for Diagnostics. |
+| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `4` for Avatar and `1` for Diagnostics. |
 | 8 | 4 | `reserved` | Zero. |
 | 12 | 4 | `payload_len` | u32. Number of bytes following the header. |
 | 16 | `payload_len` | `payload` | See the payload sections. |
@@ -138,11 +138,18 @@ AnimatorParameter:
 AnimatorLayer:
   name          : string
   default_state : option<u32>              (index into states)
+  machines      : list<StateMachine>
   states        : list<AnimatorState>
   transitions   : list<AnimatorTransition>
 
+StateMachine:
+  name          : string
+  parent        : option<u32>              (index into machines, less than its own)
+  default_state : option<u32>              (index into states)
+
 AnimatorState:
   name           : string
+  machine        : option<u32>             (index into machines)
   motion         : option<Motion>
   speed          : f64
   speed_by       : option<param>
@@ -152,11 +159,13 @@ AnimatorState:
 
 AnimatorTransition:
   from       : enum
-    0 Entry
-    1 State  : index u32
+    0 Entry       : machine option<u32>
+    1 State       : index u32
+    2 MachineExit : machine u32
   to         : enum
-    0 State  : index u32
+    0 State   : index u32
     1 Exit
+    2 Machine : index u32
   duration   : f64
   conditions : list<Condition>
 
@@ -168,6 +177,10 @@ Condition: enum
   4 Greater   : param, value f64
   5 Less      : param, value f64
 ```
+
+A layer is its root state machine; every other state machine is nested in the root or in another nested machine. A machine index of none, in `parent`, `machine` or `Entry`, means the root. A machine comes after its parent, so a client can create the machines in list order. `default_state` of the layer is the default of the root, and `default_state` of a machine names one of the states that machine holds.
+
+A transition belongs to one state machine and connects nodes of that machine only. `Entry` is the entry of the machine it names and chooses the state or nested machine it is entered with. `State` leaves a state of the machine. `MachineExit` leaves the exit of a machine nested in it and chooses where the machine goes on once the nested one is left. `Machine` enters a nested machine through its entry, and `Exit` is the exit of the machine the transition belongs to. A transition leaving `Entry` or `MachineExit` has no duration and is taken at once when it has no conditions; its `duration` is `0` and a reader ignores it.
 
 `origin` says who owns the parameter. `Declared` ones come from the `parameters` block and `Generated` ones are added by the transform, such as the weights of a blend layer; the avatar owns both. `Provided` ones are defined by the platform group they name and are only referenced.
 

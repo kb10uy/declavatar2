@@ -12,8 +12,8 @@ use super::{
 use crate::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback, TransitionSource,
-        TransitionTarget,
+        DirectField, LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback, StateMachine,
+        TransitionSource, TransitionTarget,
     },
     core::{
         external::{Extern, ExternEntry, ExternKind, ExternTable},
@@ -203,6 +203,34 @@ fn check_state_index(index: u32, len: usize) -> Result<usize, DecodeError> {
     match usize::try_from(index) {
         Ok(index) if index < len => Ok(index),
         _ => Err(DecodeError::StateOutOfRange { index, len }),
+    }
+}
+
+struct MachineIndex(usize);
+
+impl Encode for MachineIndex {
+    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
+        let index = u32::try_from(self.0).map_err(|_| EncodeError::Overflow {
+            what: "state machine index",
+            value: self.0,
+        })?;
+        writer.u32(index);
+        Ok(())
+    }
+}
+
+impl Decode for MachineIndex {
+    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        let index = reader.u32()?;
+        let len = reader.context().machines.unwrap_or(0);
+        check_machine_index(index, len).map(MachineIndex)
+    }
+}
+
+fn check_machine_index(index: u32, len: usize) -> Result<usize, DecodeError> {
+    match usize::try_from(index) {
+        Ok(index) if index < len => Ok(index),
+        _ => Err(DecodeError::MachineOutOfRange { index, len }),
     }
 }
 
@@ -417,6 +445,7 @@ impl Encode for AnimatorLayer {
     fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
         self.name.encode(writer)?;
         self.default_state.map(StateIndex).encode(writer)?;
+        self.machines.encode(writer)?;
         self.states.encode(writer)?;
         self.transitions.encode(writer)
     }
@@ -426,16 +455,67 @@ impl Decode for AnimatorLayer {
     fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
         let name = reader.decode()?;
         let default_state: Option<u32> = reader.decode()?;
-        let states: Vec<AnimatorState> = reader.decode()?;
-        let default_state = default_state.map(|index| check_state_index(index, states.len())).transpose()?;
-        reader.context_mut().states = Some(states.len());
-        let transitions = reader.decode();
-        reader.context_mut().states = None;
+        let machines: Vec<WrittenMachine> = reader.decode()?;
+        for (offset, machine) in machines.iter().enumerate() {
+            if let Some(parent) = machine.parent {
+                check_machine_index(parent, offset)?;
+            }
+        }
+
+        reader.context_mut().machines = Some(machines.len());
+        let states: Result<Vec<AnimatorState>, _> = reader.decode();
+        let states = states.and_then(|states| {
+            reader.context_mut().states = Some(states.len());
+            let transitions = reader.decode();
+            reader.context_mut().states = None;
+            Ok((states, transitions?))
+        });
+        reader.context_mut().machines = None;
+        let (states, transitions) = states?;
+
+        let state = |index: Option<u32>| index.map(|index| check_state_index(index, states.len())).transpose();
+        let default_state = state(default_state)?;
+        let machines = machines
+            .into_iter()
+            .map(|machine| {
+                Ok(StateMachine {
+                    name: machine.name,
+                    parent: machine.parent.map(|parent| parent as usize),
+                    default_state: state(machine.default_state)?,
+                })
+            })
+            .collect::<Result<_, DecodeError>>()?;
         Ok(Self {
             name,
             default_state,
+            machines,
             states,
-            transitions: transitions?,
+            transitions,
+        })
+    }
+}
+
+impl Encode for StateMachine {
+    fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
+        self.name.encode(writer)?;
+        self.parent.map(MachineIndex).encode(writer)?;
+        self.default_state.map(StateIndex).encode(writer)
+    }
+}
+
+/// A state machine as it is read, before the machines and states it refers to are known.
+struct WrittenMachine {
+    name: String,
+    parent: Option<u32>,
+    default_state: Option<u32>,
+}
+
+impl Decode for WrittenMachine {
+    fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            name: reader.decode()?,
+            parent: reader.decode()?,
+            default_state: reader.decode()?,
         })
     }
 }
@@ -443,6 +523,7 @@ impl Decode for AnimatorLayer {
 impl Encode for AnimatorState {
     fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
         self.name.encode(writer)?;
+        self.machine.map(MachineIndex).encode(writer)?;
         self.motion.encode(writer)?;
         self.playback.speed.encode(writer)?;
         self.playback.speed_by.encode(writer)?;
@@ -456,6 +537,7 @@ impl Decode for AnimatorState {
     fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
         Ok(Self {
             name: reader.decode()?,
+            machine: reader.decode::<Option<MachineIndex>>()?.map(|index| index.0),
             motion: reader.decode()?,
             playback: Playback {
                 speed: reader.decode()?,
@@ -475,10 +557,17 @@ wire_struct! {
 impl Encode for TransitionSource {
     fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
         match self {
-            TransitionSource::Entry => writer.u8(0),
+            TransitionSource::Entry(machine) => {
+                writer.u8(0);
+                machine.map(MachineIndex).encode(writer)?;
+            }
             TransitionSource::State(index) => {
                 writer.u8(1);
                 StateIndex(*index).encode(writer)?;
+            }
+            TransitionSource::MachineExit(index) => {
+                writer.u8(2);
+                MachineIndex(*index).encode(writer)?;
             }
         }
         Ok(())
@@ -488,8 +577,9 @@ impl Encode for TransitionSource {
 impl Decode for TransitionSource {
     fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
         match reader.u8()? {
-            0 => Ok(TransitionSource::Entry),
+            0 => Ok(TransitionSource::Entry(reader.decode::<Option<MachineIndex>>()?.map(|index| index.0))),
             1 => Ok(TransitionSource::State(StateIndex::decode(reader)?.0)),
+            2 => Ok(TransitionSource::MachineExit(MachineIndex::decode(reader)?.0)),
             value => Err(unknown("TransitionSource", value)),
         }
     }
@@ -503,6 +593,10 @@ impl Encode for TransitionTarget {
                 StateIndex(*index).encode(writer)?;
             }
             TransitionTarget::Exit => writer.u8(1),
+            TransitionTarget::Machine(index) => {
+                writer.u8(2);
+                MachineIndex(*index).encode(writer)?;
+            }
         }
         Ok(())
     }
@@ -513,6 +607,7 @@ impl Decode for TransitionTarget {
         match reader.u8()? {
             0 => Ok(TransitionTarget::State(StateIndex::decode(reader)?.0)),
             1 => Ok(TransitionTarget::Exit),
+            2 => Ok(TransitionTarget::Machine(MachineIndex::decode(reader)?.0)),
             value => Err(unknown("TransitionTarget", value)),
         }
     }

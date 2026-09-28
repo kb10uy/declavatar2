@@ -52,6 +52,7 @@ pub(crate) fn compile(context: &mut Context, raw: &RawLayer) -> Result<AnimatorL
         };
         states.push(AnimatorState {
             name: written.name.clone(),
+            machine: None,
             motion,
             playback,
             write_defaults: false,
@@ -76,6 +77,7 @@ pub(crate) fn compile(context: &mut Context, raw: &RawLayer) -> Result<AnimatorL
     Ok(AnimatorLayer {
         name: raw.name.clone(),
         default_state,
+        machines: vec![],
         states,
         transitions,
     })

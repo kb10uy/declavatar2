@@ -147,7 +147,7 @@ fn the_documented_example_compiles_to_the_avatar_it_describes() {
         ]
     );
     let emote = Resolved::new("Emote".to_owned(), AnimatedValueType::Int);
-    assert_eq!(expressions.transitions[0].from, TransitionSource::Entry);
+    assert_eq!(expressions.transitions[0].from, TransitionSource::Entry(None));
     assert_eq!(expressions.transitions[0].to, TransitionTarget::State(1));
     assert_eq!(expressions.transitions[0].conditions, vec![AnimatorCondition::Equals(emote, 1)]);
 

@@ -64,6 +64,9 @@ pub enum DecodeError {
     #[error("state index {index} is out of range for a layer of {len} states")]
     StateOutOfRange { index: u32, len: usize },
 
+    #[error("state machine index {index} is out of range for the {len} state machines it may refer to")]
+    MachineOutOfRange { index: u32, len: usize },
+
     #[error("parameter `{0}` is not in the animator parameter list")]
     UnknownParameter(String),
 
@@ -171,6 +174,7 @@ pub(crate) struct Context {
     pub extern_lens: [usize; 3],
     pub parameters: BTreeMap<String, AnimatedValueType>,
     pub states: Option<usize>,
+    pub machines: Option<usize>,
 }
 
 #[derive(Debug)]

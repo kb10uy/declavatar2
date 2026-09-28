@@ -39,6 +39,7 @@ pub(crate) fn compile(context: &mut Context, layer: &Layer) -> Result<AnimatorLa
 pub(crate) fn state(context: &mut Context, name: impl Into<String>, content: &Content, write_defaults: bool) -> Result<AnimatorState, TransformError> {
     Ok(AnimatorState {
         name: name.into(),
+        machine: None,
         motion: Some(Motion::Clip(Clip::Inline(InlineAnimation::Fixed(context.animation(&content.animation)?)))),
         playback: Playback::default(),
         write_defaults,
@@ -89,7 +90,7 @@ fn group(context: &mut Context, group: &GroupLayer) -> Result<AnimatorLayer, Tra
         let equals = || vec![AnimatorCondition::Equals(parameter.clone(), value)];
         let differs = || vec![AnimatorCondition::NotEqual(parameter.clone(), value)];
         if symmetric {
-            transitions.push(transition(TransitionSource::Entry, TransitionTarget::State(index), equals()));
+            transitions.push(transition(TransitionSource::Entry(None), TransitionTarget::State(index), equals()));
         } else {
             transitions.push(transition(TransitionSource::State(0), TransitionTarget::State(index), equals()));
             transitions.push(transition(TransitionSource::State(index), TransitionTarget::State(0), differs()));
@@ -117,6 +118,7 @@ fn group(context: &mut Context, group: &GroupLayer) -> Result<AnimatorLayer, Tra
     Ok(AnimatorLayer {
         name: group.name.clone(),
         default_state: Some(0),
+        machines: vec![],
         states,
         transitions,
     })
@@ -148,6 +150,7 @@ fn switch(context: &mut Context, switch: &SwitchLayer) -> Result<AnimatorLayer, 
     Ok(AnimatorLayer {
         name: switch.name.clone(),
         default_state: Some(0),
+        machines: vec![],
         states: vec![state(context, "Disabled", &off, false)?, state(context, "Enabled", &on, false)?],
         transitions: vec![
             transition(
@@ -169,8 +172,10 @@ fn puppet(context: &mut Context, puppet: &PuppetLayer) -> Result<AnimatorLayer, 
     Ok(AnimatorLayer {
         name: puppet.name.clone(),
         default_state: Some(0),
+        machines: vec![],
         states: vec![AnimatorState {
             name: puppet.name.clone(),
+            machine: None,
             motion: Some(Motion::BlendTree(BlendTree::Parametric(tree))),
             playback: Playback::default(),
             write_defaults: false,
@@ -286,8 +291,10 @@ fn blend(context: &mut Context, blend: &BlendLayer) -> Result<AnimatorLayer, Tra
     Ok(AnimatorLayer {
         name: blend.name.clone(),
         default_state: Some(0),
+        machines: vec![],
         states: vec![AnimatorState {
             name: blend.name.clone(),
+            machine: None,
             motion: Some(Motion::BlendTree(BlendTree::Direct(DirectBlendTree { fields }))),
             playback: Playback::default(),
             write_defaults: true,
@@ -494,12 +501,12 @@ mod tests {
             compiled.transitions,
             vec![
                 transition(
-                    TransitionSource::Entry,
+                    TransitionSource::Entry(None),
                     TransitionTarget::State(1),
                     vec![AnimatorCondition::Equals(emote.clone(), 1)]
                 ),
                 transition(
-                    TransitionSource::Entry,
+                    TransitionSource::Entry(None),
                     TransitionTarget::State(2),
                     vec![AnimatorCondition::Equals(emote.clone(), 2)]
                 ),
@@ -706,6 +713,7 @@ mod tests {
             .map(|field| {
                 let state = AnimatorState {
                     name: String::new(),
+                    machine: None,
                     motion: Some(field.motion.clone()),
                     playback: Playback::default(),
                     write_defaults: false,

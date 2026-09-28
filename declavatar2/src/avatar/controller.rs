@@ -49,18 +49,42 @@ pub struct AnimatorController {
     pub layers: Vec<AnimatorLayer>,
 }
 
-/// One layer of an animator controller. States and transitions refer to each other by index.
+/// One layer of an animator controller. States, state machines and transitions refer to each other by index.
+///
+/// The layer itself is the root state machine. A machine index of `None` means the root.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimatorLayer {
     pub name: String,
+
+    /// Default state of the root state machine.
     pub default_state: Option<usize>,
+
+    /// Every state machine nested in the root, each one after its parent.
+    pub machines: Vec<StateMachine>,
+
     pub states: Vec<AnimatorState>,
     pub transitions: Vec<AnimatorTransition>,
+}
+
+/// State machine nested in a layer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateMachine {
+    pub name: String,
+
+    /// The machine holding this one, which comes before it in `AnimatorLayer::machines`.
+    pub parent: Option<usize>,
+
+    /// One of the states held directly by this machine.
+    pub default_state: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimatorState {
     pub name: String,
+
+    /// The state machine holding this state.
+    pub machine: Option<usize>,
+
     pub motion: Option<Motion>,
     pub playback: Playback,
     pub write_defaults: bool,
@@ -134,6 +158,11 @@ pub struct DirectField {
     pub motion: Motion,
 }
 
+/// Transition between two nodes of one state machine.
+///
+/// A transition leaving a state is taken on its conditions, or at the end of the motion when it has none.
+/// A transition leaving `Entry` or `MachineExit` is chosen at the moment its source is passed, is taken at once
+/// when it has no conditions, and has no duration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimatorTransition {
     pub from: TransitionSource,
@@ -144,13 +173,23 @@ pub struct AnimatorTransition {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionSource {
-    Entry,
+    /// Entry of the given state machine, which chooses a state to enter it with.
+    Entry(Option<usize>),
+
     State(usize),
+
+    /// Exit of the given nested state machine, which chooses where its parent goes on.
+    MachineExit(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionTarget {
     State(usize),
+
+    /// A nested state machine, entered through its entry.
+    Machine(usize),
+
+    /// Exit of the state machine the transition belongs to.
     Exit,
 }
 
