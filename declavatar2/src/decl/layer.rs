@@ -4,6 +4,7 @@ use crate::{
         behavior::{Animation, Content},
         raw::RawMachine,
     },
+    unity::{animator::LayerBlending, external::AssetLocator},
 };
 
 /// Layer inside a controller.
@@ -13,7 +14,7 @@ pub enum Layer {
     Switch(SwitchLayer),
     Puppet(PuppetLayer),
     Blend(BlendLayer),
-    Raw(RawMachine),
+    Raw(RawLayer),
 }
 
 impl Layer {
@@ -23,7 +24,7 @@ impl Layer {
             Layer::Switch(layer) => &layer.name,
             Layer::Puppet(layer) => &layer.name,
             Layer::Blend(layer) => &layer.name,
-            Layer::Raw(layer) => &layer.name,
+            Layer::Raw(layer) => &layer.machine.name,
         }
     }
 
@@ -33,15 +34,41 @@ impl Layer {
             Layer::Switch(layer) => layer.at.as_ref(),
             Layer::Puppet(layer) => layer.at.as_ref(),
             Layer::Blend(layer) => layer.at.as_ref(),
-            Layer::Raw(layer) => layer.at.as_ref(),
+            Layer::Raw(layer) => layer.machine.at.as_ref(),
         }
     }
+
+    pub fn settings(&self) -> &LayerSettings {
+        match self {
+            Layer::Group(layer) => &layer.settings,
+            Layer::Switch(layer) => &layer.settings,
+            Layer::Puppet(layer) => &layer.settings,
+            Layer::Blend(layer) => &layer.settings,
+            Layer::Raw(layer) => &layer.settings,
+        }
+    }
+}
+
+/// How a layer is applied on top of the layers before it, as written in its options.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LayerSettings {
+    pub weight: Option<f64>,
+    pub blending: Option<LayerBlending>,
+    pub mask: Option<Unresolved<AssetLocator>>,
+}
+
+/// Layer written as a state machine, which is its root machine.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawLayer {
+    pub settings: LayerSettings,
+    pub machine: RawMachine,
 }
 
 /// Layer that switches between mutually exclusive options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupLayer {
     pub name: String,
+    pub settings: LayerSettings,
     pub driven_by: Option<Unresolved<String>>,
     pub symmetric: Option<bool>,
     pub default: Option<Content>,
@@ -61,6 +88,7 @@ pub struct GroupOption {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchLayer {
     pub name: String,
+    pub settings: LayerSettings,
     pub driven_by: Option<Unresolved<String>>,
     pub content: SwitchContent,
     pub at: Option<SourceLocation>,
@@ -80,6 +108,7 @@ pub enum SwitchContent {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PuppetLayer {
     pub name: String,
+    pub settings: LayerSettings,
     pub driven_by: Option<Unresolved<String>>,
     pub keyframes: Vec<PuppetKeyframe>,
     pub at: Option<SourceLocation>,
@@ -96,6 +125,7 @@ pub struct PuppetKeyframe {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlendLayer {
     pub name: String,
+    pub settings: LayerSettings,
     pub puppets: Vec<PuppetLayer>,
     pub at: Option<SourceLocation>,
 }

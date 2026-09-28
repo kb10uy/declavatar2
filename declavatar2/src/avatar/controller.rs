@@ -6,7 +6,7 @@ use crate::{
     },
     unity::{
         animation::InlineAnimation,
-        animator::{AnimatorParameter, BlendTreeType, MergeMode, PathMode},
+        animator::{AnimatorParameter, BlendTreeType, LayerBlending, MergeMode, PathMode},
         external::Asset,
     },
     vrchat::playable_layer::PlayableLayer,
@@ -34,7 +34,7 @@ pub struct PlayableController {
     pub priority: i32,
     pub path_mode: PathMode,
 
-    /// Avatar mask the controller is applied with, if the script gave one.
+    /// Avatar mask of every layer that does not have its own, if the script gave one.
     pub mask: Option<Extern<Asset>>,
 
     pub controller: AnimatorController,
@@ -55,6 +55,7 @@ pub struct AnimatorController {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimatorLayer {
     pub name: String,
+    pub settings: LayerSettings,
 
     /// Default state of the root state machine.
     pub default_state: Option<usize>,
@@ -64,6 +65,28 @@ pub struct AnimatorLayer {
 
     pub states: Vec<AnimatorState>,
     pub transitions: Vec<AnimatorTransition>,
+}
+
+/// How a layer is applied on top of the layers before it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerSettings {
+    /// Weight the layer starts with, between 0 and 1.
+    pub weight: f64,
+
+    pub blending: LayerBlending,
+
+    /// Avatar mask of this layer, which replaces the mask of its controller.
+    pub mask: Option<Extern<Asset>>,
+}
+
+impl Default for LayerSettings {
+    fn default() -> Self {
+        Self {
+            weight: 1.0,
+            blending: LayerBlending::Override,
+            mask: None,
+        }
+    }
 }
 
 /// State machine nested in a layer.

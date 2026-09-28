@@ -314,6 +314,7 @@ mod tests {
                 vec![
                     Layer::Group(GroupLayer {
                         name: "Expressions".into(),
+                        settings: Default::default(),
                         driven_by: Some("Emote".to_owned().into()),
                         symmetric: None,
                         default: None,
@@ -328,12 +329,14 @@ mod tests {
                     }),
                     Layer::Switch(SwitchLayer {
                         name: "Hat".into(),
+                        settings: Default::default(),
                         driven_by: Some("Hat".to_owned().into()),
                         content: SwitchContent::Toggle(Content::new()),
                         at: None,
                     }),
                     Layer::Puppet(PuppetLayer {
                         name: "Wink".into(),
+                        settings: Default::default(),
                         driven_by: None,
                         keyframes: vec![],
                         at: None,

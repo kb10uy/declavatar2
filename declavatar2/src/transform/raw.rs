@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::{
     avatar::controller::{
-        AnimatorCondition, AnimatorLayer, AnimatorState, AnimatorTransition, BlendTree, Clip, DirectBlendTree, DirectField, Motion, ParametricBlendTree,
-        ParametricField, Playback, StateMachine, TransitionSource, TransitionTarget,
+        AnimatorCondition, AnimatorLayer, AnimatorState, AnimatorTransition, BlendTree, Clip, DirectBlendTree, DirectField, LayerSettings, Motion,
+        ParametricBlendTree, ParametricField, Playback, StateMachine, TransitionSource, TransitionTarget,
     },
     core::resolution::{SourceLocation, Unresolved},
     decl::raw::{self, ClipOptions, Condition, RawMachine},
@@ -18,6 +18,7 @@ use crate::{
 pub(crate) fn compile(context: &mut Context, raw: &RawMachine) -> Result<AnimatorLayer, TransformError> {
     let mut layer = AnimatorLayer {
         name: raw.name.clone(),
+        settings: LayerSettings::default(),
         default_state: None,
         machines: Vec::new(),
         states: Vec::new(),

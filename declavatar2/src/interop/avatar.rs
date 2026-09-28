@@ -12,8 +12,8 @@ use super::{
 use crate::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback, StateMachine,
-        TransitionSource, TransitionTarget,
+        DirectField, LayerRef, LayerSettings, MenuAxis, MenuDirection, MenuItem, Motion, ParametricBlendTree, ParametricField, PlayableController, Playback,
+        StateMachine, TransitionSource, TransitionTarget,
     },
     core::{
         external::{Extern, ExternEntry, ExternKind, ExternTable},
@@ -26,7 +26,7 @@ use crate::{
         animator::{
             AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
             AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin,
-            AnimatorParameterTypeDefault, BlendTreeType, MergeMode, PathMode,
+            AnimatorParameterTypeDefault, BlendTreeType, LayerBlending, MergeMode, PathMode,
         },
         external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath},
         state::{GenericStateBehavior, GenericValue},
@@ -444,6 +444,7 @@ wire_enum! {
 impl Encode for AnimatorLayer {
     fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
         self.name.encode(writer)?;
+        self.settings.encode(writer)?;
         self.default_state.map(StateIndex).encode(writer)?;
         self.machines.encode(writer)?;
         self.states.encode(writer)?;
@@ -454,6 +455,7 @@ impl Encode for AnimatorLayer {
 impl Decode for AnimatorLayer {
     fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
         let name = reader.decode()?;
+        let settings = reader.decode()?;
         let default_state: Option<u32> = reader.decode()?;
         let machines: Vec<WrittenMachine> = reader.decode()?;
         for (offset, machine) in machines.iter().enumerate() {
@@ -487,6 +489,7 @@ impl Decode for AnimatorLayer {
             .collect::<Result<_, DecodeError>>()?;
         Ok(Self {
             name,
+            settings,
             default_state,
             machines,
             states,
@@ -552,6 +555,14 @@ impl Decode for AnimatorState {
 
 wire_struct! {
     AnimatorTransition { from, to, duration, conditions }
+    LayerSettings { weight, blending, mask }
+}
+
+wire_enum! {
+    LayerBlending {
+        0 Override,
+        1 Additive,
+    }
 }
 
 impl Encode for TransitionSource {

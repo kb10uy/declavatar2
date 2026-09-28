@@ -137,6 +137,9 @@ AnimatorParameter:
 
 AnimatorLayer:
   name          : string
+  weight        : f64
+  blending      : u8   0 Override, 1 Additive
+  mask          : option<extern>           (asset)
   default_state : option<u32>              (index into states)
   machines      : list<StateMachine>
   states        : list<AnimatorState>
@@ -177,6 +180,8 @@ Condition: enum
   4 Greater   : param, value f64
   5 Less      : param, value f64
 ```
+
+`weight` is the weight the layer starts with, between 0 and 1. A layer without its own `mask` uses the `mask` of its controller.
 
 A layer is its root state machine; every other state machine is nested in the root or in another nested machine. A machine index of none, in `parent`, `machine` or `Entry`, means the root. A machine comes after its parent, so a client can create the machines in list order. `default_state` of the layer is the default of the root, and `default_state` of a machine names one of the states that machine holds.
 

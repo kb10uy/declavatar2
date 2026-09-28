@@ -6,14 +6,17 @@ use crate::{
     core::{phase::Declared, resolution::Unresolved, value_set::ValueSet},
     decl::{
         behavior::Animation,
-        layer::Layer,
+        layer::{Layer, RawLayer},
         raw::{
             BlendTree, BlendTreeField, BlendTreeType, ClipOptions, Condition, DirectBlendTree, DirectBlendTreeField, Motion, ParametricBlendTree, RawMachine,
             RawState, RawTransition, TransitionSource, TransitionTarget,
         },
     },
     lua::{
-        api::target::{AssetArgument, located},
+        api::{
+            layer,
+            target::{AssetArgument, located},
+        },
         content, list,
         location::caller_location,
         node,
@@ -163,23 +166,31 @@ impl FromLua for MachineChild {
 }
 
 fn layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaResult<node::Layer> {
-    Ok(node::Layer(Layer::Raw(machine_of(lua, "da.raw.layer", name, arguments)?)))
+    const OWNER: &str = "da.raw.layer";
+
+    let (table, children) = with_children(lua, OWNER, arguments)?;
+    let mut options = Options::new(OWNER, table);
+    let settings = layer::settings(lua, OWNER, &mut options)?;
+    let machine = machine_of(lua, OWNER, name, options, &children)?;
+    Ok(node::Layer(Layer::Raw(RawLayer { settings, machine })))
 }
 
 fn machine(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaResult<node::RawMachine> {
-    Ok(node::RawMachine(machine_of(lua, "da.raw.machine", name, arguments)?))
+    const OWNER: &str = "da.raw.machine";
+
+    let (table, children) = with_children(lua, OWNER, arguments)?;
+    let options = Options::new(OWNER, table);
+    Ok(node::RawMachine(machine_of(lua, OWNER, name, options, &children)?))
 }
 
-fn machine_of(lua: &Lua, owner: &'static str, name: String, arguments: Variadic<Value>) -> LuaResult<RawMachine> {
-    let (table, children) = with_children(lua, owner, arguments)?;
-    let mut options = Options::new(owner, table);
+fn machine_of(lua: &Lua, owner: &'static str, name: String, mut options: Options, children: &Table) -> LuaResult<RawMachine> {
     let default_state = options.take::<StateName>("default")?.map(|state| located(lua, state.0));
     options.finish()?;
 
     let mut states = Vec::new();
     let mut machines = Vec::new();
     let mut transitions = Vec::new();
-    for child in list::collect::<MachineChild>(lua, owner, &children)? {
+    for child in list::collect::<MachineChild>(lua, owner, children)? {
         match child {
             MachineChild::State(pending) => {
                 let from = TransitionSource::Node(located(lua, pending.state.name.clone()));
@@ -619,7 +630,7 @@ mod tests {
     fn raw_layer_of(expression: &str) -> RawMachine {
         let (lua, value) = eval(expression);
         match node::Layer::from_lua(value, &lua).expect("a layer should be built").0 {
-            Layer::Raw(raw) => raw,
+            Layer::Raw(raw) => raw.machine,
             other => panic!("expected a raw layer, got {other:?}"),
         }
     }
@@ -1077,6 +1088,12 @@ mod tests {
     fn a_transition_takes_between_two_and_four_arguments() {
         let message = eval_error("da.raw.transition('wave')");
         assert!(message.contains("expected between two and four arguments, but 1 were written"), "{message}");
+    }
+
+    #[rstest]
+    fn a_nested_machine_is_not_a_layer_and_takes_no_layer_settings() {
+        let message = eval_error("da.raw.machine('Dance', { weight = 0.5 }, {})");
+        assert!(message.contains("da.raw.machine: unknown option `weight`"), "{message}");
     }
 
     #[rstest]

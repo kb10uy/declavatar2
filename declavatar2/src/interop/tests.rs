@@ -16,8 +16,8 @@ use crate::{
     EvaluateOptions,
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Behavior, BlendTree, Clip, DirectBlendTree, DirectField,
-        LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback, StateMachine,
-        TransitionSource, TransitionTarget,
+        LayerRef, LayerSettings, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
+        StateMachine, TransitionSource, TransitionTarget,
     },
     compile,
     core::{
@@ -32,7 +32,7 @@ use crate::{
         animator::{
             AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
             AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin,
-            AnimatorParameterTypeDefault, BlendTreeType, MergeMode, PathMode,
+            AnimatorParameterTypeDefault, BlendTreeType, LayerBlending, MergeMode, PathMode,
         },
         external::{Asset, AssetLocator, ComponentType, Externals, ObjectPath},
         state::{GenericStateBehavior, GenericValue},
@@ -278,6 +278,25 @@ enum_cases! {
 }
 
 enum_cases! {
+    fn layer_blendings(value: LayerBlending) {
+        round_trip(value);
+    }
+    cases {
+        override_: LayerBlending::Override => LayerBlending::Override,
+        additive: LayerBlending::Additive => LayerBlending::Additive,
+    }
+}
+
+#[rstest]
+fn layer_settings_round_trip() {
+    round_trip(LayerSettings {
+        weight: 0.25,
+        blending: LayerBlending::Additive,
+        mask: Some(asset(3)),
+    });
+}
+
+enum_cases! {
     fn merge_modes(value: MergeMode) {
         round_trip(value);
     }
@@ -361,6 +380,7 @@ fn a_layer_with_nested_machines_round_trips() {
     let nested = |name: &str, machine: Option<usize>| AnimatorState { machine, ..state(name, None) };
     round_trip(AnimatorLayer {
         name: "Emote".into(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
         machines: vec![
             StateMachine {
@@ -857,6 +877,7 @@ fn extern_table_with_duplicate_values() -> Vec<u8> {
 fn layer_with_dangling_default_state() -> Vec<u8> {
     let mut writer = Writer::new();
     writer.string("Layer").unwrap();
+    LayerSettings::default().encode(&mut writer).unwrap();
     writer.u8(1);
     writer.u32(0);
     writer.u32(0);
@@ -868,6 +889,7 @@ fn layer_with_dangling_default_state() -> Vec<u8> {
 fn layer_with_machine_before_its_parent() -> Vec<u8> {
     let mut writer = Writer::new();
     writer.string("Layer").unwrap();
+    LayerSettings::default().encode(&mut writer).unwrap();
     writer.u8(0);
     writer.u32(1);
     writer.string("Child").unwrap();
@@ -880,6 +902,7 @@ fn layer_with_machine_before_its_parent() -> Vec<u8> {
 fn layer_with_dangling_machine_default() -> Vec<u8> {
     let mut writer = Writer::new();
     writer.string("Layer").unwrap();
+    LayerSettings::default().encode(&mut writer).unwrap();
     writer.u8(0);
     writer.u32(1);
     writer.string("Machine").unwrap();
@@ -954,6 +977,7 @@ fn controller(playable: PlayableLayer, parameters: Vec<AnimatorParameter>, layer
 fn layer_driven_by(name: &str, value_type: AnimatedValueType) -> AnimatorLayer {
     AnimatorLayer {
         name: "Layer".into(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
         machines: vec![],
         states: vec![state("A", None), state("B", None)],
@@ -1064,6 +1088,7 @@ fn externals_lead_the_avatar_payload_and_size_the_tables() {
             vec![],
             vec![AnimatorLayer {
                 name: "Skin".into(),
+                settings: LayerSettings::default(),
                 default_state: None,
                 machines: vec![],
                 states: vec![state(
@@ -1124,6 +1149,7 @@ fn controlling(playable: PlayableLayer, layer: LayerRef) -> PlayableController {
     }));
     let layer = AnimatorLayer {
         name: "Control".into(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
         machines: vec![],
         states: vec![control],
@@ -1135,6 +1161,7 @@ fn controlling(playable: PlayableLayer, layer: LayerRef) -> PlayableController {
 fn layer_named(name: &str) -> AnimatorLayer {
     AnimatorLayer {
         name: name.into(),
+        settings: LayerSettings::default(),
         default_state: None,
         machines: vec![],
         states: vec![],

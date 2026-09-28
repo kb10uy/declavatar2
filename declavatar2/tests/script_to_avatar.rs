@@ -11,7 +11,9 @@ use declavatar2::{
     core::resolution::Resolved,
     unity::{
         animation::{ClipAttributes, InlineAnimation, Interpolation},
-        animator::{AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin, MergeMode, PathMode},
+        animator::{
+            AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatorParameter, AnimatorParameterOrigin, LayerBlending, MergeMode, PathMode,
+        },
         external::AssetLocator,
         state::GenericValue,
         value::{AnimatedValue, AnimatedValueType},
@@ -797,6 +799,35 @@ return da.avatar({
     );
 
     assert_eq!(errors, vec!["avatar.lua:8: `Emote/Dance` holds no state or state machine named `Idle`"]);
+}
+
+#[rstest]
+fn layer_settings_compile_through_to_the_avatar() {
+    let source = r#"local da = require "declavatar"
+return da.avatar({
+    parameters = { da.bool("Hat"), da.float("Arm") },
+    controllers = {
+        da.controller("fx", { mask = da.asset.path("Assets/Body.mask") }, {
+            da.switch_layer("Hat", { weight = 0.5, blending = "additive", mask = da.asset.path("Assets/Head.mask") }, { da.object("Hat"):active() }),
+            da.blend_layer("Merged", { weight = 0 }, { da.puppet_layer("Arm", { da.keyframe(0, {}), da.keyframe(1, {}) }) }),
+        }),
+    },
+})
+"#;
+    let avatar = compile(source, "avatar.lua", &EvaluateOptions::new()).expect("the script should compile");
+    let controller = &avatar.controllers[0];
+    let [hat, merged] = &controller.controller.layers[..] else {
+        panic!("expected two layers");
+    };
+    let path_of = |mask| &avatar.externals.assets.get(mask).value;
+
+    assert_eq!(controller.mask.map(path_of), Some(&AssetLocator::Path("Assets/Body.mask".into())));
+    assert_eq!(hat.settings.weight, 0.5);
+    assert_eq!(hat.settings.blending, LayerBlending::Additive);
+    assert_eq!(hat.settings.mask.map(path_of), Some(&AssetLocator::Path("Assets/Head.mask".into())));
+    assert_eq!(merged.settings.weight, 0.0);
+    assert_eq!(merged.settings.blending, LayerBlending::Override);
+    assert_eq!(merged.settings.mask, None);
 }
 
 #[rstest]

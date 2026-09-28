@@ -7,8 +7,8 @@ use std::{
 use declavatar2::{
     avatar::{
         AnimatorCondition, AnimatorController, AnimatorLayer, AnimatorState, AnimatorTransition, Avatar, Behavior, BlendTree, Clip, DirectBlendTree,
-        DirectField, LayerRef, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField, PlayableController, Playback,
-        StateMachine, TransitionSource, TransitionTarget,
+        DirectField, LayerRef, LayerSettings, MenuAxis, MenuDirection, MenuItem, Motion, ParameterRef, ParametricBlendTree, ParametricField,
+        PlayableController, Playback, StateMachine, TransitionSource, TransitionTarget,
     },
     core::{Compiled, Extern, Resolved, SourceLocation, Unresolved, value_set::ValueSet},
     interop::{Diagnostic, DiagnosticStage, Diagnostics, decode_avatar, decode_diagnostics, encode_avatar, encode_diagnostics},
@@ -16,7 +16,8 @@ use declavatar2::{
         AnimatedAnimatorProperty, AnimatedAnimatorTarget, AnimatedComponentProperty, AnimatedComponentTarget, AnimatedGameObjectProperty,
         AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget, AnimatedTarget, AnimatedValue, AnimatedValueType, AnimatorParameter,
         AnimatorParameterOrigin, Asset, AssetLocator, BlendTreeType, ClipAttributes, ComponentType, Curve, Externals, FixedAnimationEntry,
-        GenericStateBehavior, GenericValue, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe, MergeMode, ObjectPath, PathMode,
+        GenericStateBehavior, GenericValue, InlineAnimation, Interpolation, KeyedAnimation, KeyedAnimationEntry, Keyframe, LayerBlending, MergeMode,
+        ObjectPath, PathMode,
     },
     vrchat::{
         ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlayableLayer,
@@ -568,6 +569,7 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
     vec![
         AnimatorLayer {
             name: "Expressions".into(),
+            settings: LayerSettings::default(),
             default_state: Some(0),
             machines: vec![],
             states: vec![
@@ -618,6 +620,11 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
         },
         AnimatorLayer {
             name: "Puppet".into(),
+            settings: LayerSettings {
+                weight: 0.5,
+                blending: LayerBlending::Additive,
+                mask: Some(refs.mask),
+            },
             default_state: Some(0),
             machines: vec![],
             states: vec![state(
@@ -635,6 +642,7 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
         },
         AnimatorLayer {
             name: "External".into(),
+            settings: LayerSettings::default(),
             default_state: None,
             machines: vec![],
             states: vec![
@@ -645,6 +653,7 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
         },
         AnimatorLayer {
             name: "Trees".into(),
+            settings: LayerSettings::default(),
             default_state: Some(1),
             machines: vec![],
             states: vec![
@@ -674,6 +683,7 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
         },
         AnimatorLayer {
             name: String::new(),
+            settings: LayerSettings::default(),
             default_state: None,
             machines: vec![],
             states: vec![],
@@ -681,6 +691,7 @@ fn fx_layers(refs: &Refs) -> Vec<AnimatorLayer> {
         },
         AnimatorLayer {
             name: "Machines".into(),
+            settings: LayerSettings::default(),
             default_state: Some(0),
             machines: vec![
                 StateMachine {
@@ -745,6 +756,7 @@ fn nested_state(name: &str, machine: usize) -> AnimatorState {
 fn gesture_layers(refs: &Refs) -> Vec<AnimatorLayer> {
     vec![AnimatorLayer {
         name: "Hat".into(),
+        settings: LayerSettings::default(),
         default_state: Some(0),
         machines: vec![],
         states: vec![

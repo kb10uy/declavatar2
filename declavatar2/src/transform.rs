@@ -89,6 +89,7 @@ mod tests {
     fn group(name: &str) -> Layer {
         Layer::Group(GroupLayer {
             name: name.into(),
+            settings: Default::default(),
             driven_by: None,
             symmetric: None,
             default: None,

@@ -168,6 +168,17 @@ pub enum MergeMode {
     Replace,
 }
 
+/// How a layer combines with the layers before it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LayerBlending {
+    /// The layer replaces what the layers before it animate.
+    #[default]
+    Override,
+
+    /// The layer adds to what the layers before it animate.
+    Additive,
+}
+
 /// What the object paths written in a controller are relative to.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PathMode {

@@ -597,6 +597,7 @@ mod tests {
     fn group(name: &str, driven_by: Option<&str>, options: &[&str], line: u32) -> Layer {
         Layer::Group(GroupLayer {
             name: name.into(),
+            settings: Default::default(),
             driven_by: driven_by.map(|parameter| parameter.to_owned().into()),
             symmetric: None,
             default: None,
@@ -615,6 +616,7 @@ mod tests {
     fn puppet(name: &str, line: u32) -> PuppetLayer {
         PuppetLayer {
             name: name.into(),
+            settings: Default::default(),
             driven_by: None,
             keyframes: vec![],
             at: at(line),
@@ -630,12 +632,14 @@ mod tests {
                     group("Expressions", Some("Emote"), &["smile", "angry"], 10),
                     Layer::Switch(SwitchLayer {
                         name: "Hat".into(),
+                        settings: Default::default(),
                         driven_by: None,
                         content: SwitchContent::Toggle(Content::new()),
                         at: at(11),
                     }),
                     Layer::Blend(BlendLayer {
                         name: "Face".into(),
+                        settings: Default::default(),
                         puppets: vec![puppet("Wink", 13), puppet("Brow", 14)],
                         at: at(12),
                     }),
@@ -682,6 +686,7 @@ mod tests {
                         group("Expressions", None, &[], 2),
                         Layer::Blend(BlendLayer {
                             name: "Face".into(),
+                            settings: Default::default(),
                             puppets: vec![puppet("Wink", 4)],
                             at: at(3),
                         }),

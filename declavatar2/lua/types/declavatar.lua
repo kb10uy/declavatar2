@@ -116,6 +116,9 @@ local da = {}
 --- What the object paths of a controller start at: the avatar root, or a root the client supplies.
 ---@alias da.PathMode "absolute"|"relative"
 
+--- Whether a layer replaces what the layers before it animate, or adds to it.
+---@alias da.LayerBlending "override"|"additive"
+
 --- What tracking control does to the parts it names.
 ---@alias da.TrackingMode "tracking"|"animation"
 
@@ -237,20 +240,29 @@ local da = {}
 ---@field mode? da.MergeMode Defaults to `"append"`.
 ---@field priority? integer Order among controllers bound for the same playable layer. Defaults to `0`.
 ---@field path_mode? da.PathMode Defaults to `"absolute"`.
----@field mask? da.Asset Avatar mask the controller is applied with.
+---@field mask? da.Asset Avatar mask of every layer that does not have its own.
 
----@class da.GroupLayerOptions
+--- Options every layer takes.
+---@class da.LayerOptions
+---@field weight? number Weight the layer starts with, between 0 and 1. Defaults to 1.
+---@field blending? da.LayerBlending Defaults to `"override"`.
+---@field mask? da.Asset Avatar mask of this layer, used in place of the mask of its controller.
+
+---@class da.GroupLayerOptions: da.LayerOptions
 ---@field driven_by? string
 ---@field symmetric? boolean Defaults to true, where switching between options never passes through the default state.
 
----@class da.SwitchLayerOptions
+---@class da.SwitchLayerOptions: da.LayerOptions
 ---@field driven_by? string
 
----@class da.PuppetLayerOptions
+--- A puppet layer merged into a blend layer is not a layer of its own, so it takes none of `da.LayerOptions`.
+---@class da.PuppetLayerOptions: da.LayerOptions
 ---@field driven_by? string Must be a float.
 
----@class da.RawLayerOptions
+---@class da.MachineOptions
 ---@field default? da.StateValue Must be a state the machine holds directly. Defaults to its first state.
+
+---@class da.RawLayerOptions: da.LayerOptions, da.MachineOptions
 
 ---@class da.RawStateOptions
 ---@field motion? da.Motion
@@ -728,10 +740,13 @@ function da.puppet_layer(name, options, keyframes) end
 
 --- Merges its children into one layer whose single state is a direct blend tree.
 --- Only puppet layers can be merged, and their targets sum instead of overriding.
+--- The layer options belong to the blend layer, not to its children.
 ---@param name string
+---@param options da.LayerOptions
 ---@param children da.LayerList
 ---@return da.Layer
-function da.blend_layer(name, children) end
+---@overload fun(name: string, children: da.LayerList): da.Layer
+function da.blend_layer(name, options, children) end
 
 --------------------------------------------------------------------------------
 -- Menu
@@ -802,7 +817,7 @@ function da.raw.layer(name, options, children) end
 --- holds. A transition leading to `da.raw.exit` inside it leaves the machine, and the transitions
 --- leaving the machine in its parent choose where to go on.
 ---@param name string
----@param options da.RawLayerOptions
+---@param options da.MachineOptions
 ---@param children da.RawChildList
 ---@return da.Machine
 ---@overload fun(name: string, children: da.RawChildList): da.Machine

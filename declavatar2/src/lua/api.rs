@@ -122,6 +122,7 @@ mod definition_tests {
         api::{
             behavior::{AUDIO_APPLY, BLENDABLE_PLAYABLES, PLAYBACK_ORDERS, POSE_SPACES, TRACKING_MODES, TRACKING_TARGETS},
             controller::{MERGE_MODES, PATH_MODES, PLAYABLE_LAYERS},
+            layer::BLENDINGS,
             parameter::{PROVIDED_GROUPS, SCOPES},
             raw::{DIRECT_TREE_TYPE, INTERPOLATIONS, PARAMETRIC_TREE_TYPES},
         },
@@ -257,6 +258,7 @@ mod definition_tests {
         assert_eq!(documented_alias(DECLAVATAR, "da.AudioApply"), accepted(AUDIO_APPLY));
         assert_eq!(documented_alias(DECLAVATAR, "da.PlayableLayer"), accepted(PLAYABLE_LAYERS));
         assert_eq!(documented_alias(DECLAVATAR, "da.MergeMode"), accepted(MERGE_MODES));
+        assert_eq!(documented_alias(DECLAVATAR, "da.LayerBlending"), accepted(BLENDINGS));
         assert_eq!(documented_alias(DECLAVATAR, "da.PathMode"), accepted(PATH_MODES));
         assert_eq!(documented_alias(DECLAVATAR, "da.InterpolationName"), accepted(INTERPOLATIONS));
 

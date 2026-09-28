@@ -117,6 +117,16 @@ Lua script
     - The options map onto what a Modular Avatar Merge Animator takes: `mode` is `"append"` (default) or `"replace"`, `priority` is an integer defaulting to `0`, `mask` is an explicit `da.asset.*` locator. Delete Attached Animator, Match Avatar Write Defaults and Relative Path Root are component-side settings and are not written in a script.
     - `path_mode` is `"absolute"` (default) or `"relative"`. Object paths in a relative controller start at a root the client supplies instead of the avatar root. A bound object such as `da.object("Hat")` is only a path, so the same object used from controllers of both modes names two different objects; the transform does not check for that.
     - Layer names are unique across every controller, including blend-layer children, because drives such as `da.drive_switch("Hat")` refer to a layer by name alone.
+    - The controller `mask` applies to every layer of the controller that has no mask of its own.
+
+#### Layer Options
+
+- Every layer builder (`da.group_layer`, `da.switch_layer`, `da.puppet_layer`, `da.blend_layer`, `da.raw.layer`) takes `weight`, `blending` and `mask` in its options table, besides its own options. They map onto the Unity layer settings of the same name.
+    - `weight` is the weight the layer starts with, in `0..1`, defaulting to `1`. `da.layer_control` changes it at run time.
+    - `blending` is `"override"` (default) or `"additive"`.
+    - `mask` is an explicit `da.asset.*` locator, like the controller `mask`, and replaces the controller mask for that layer.
+- `da.blend_layer(name[, opts], children)` takes an optional options table for this. A puppet layer merged into a blend layer is not a layer of its own, so writing any of these options on it is an error at the `da.blend_layer` call.
+- `da.raw.machine` is not a layer and takes only `default`. IK pass and synced layers are not exposed.
 
 #### Layers
 
@@ -136,7 +146,7 @@ Lua script
     - Compiles to one state holding a 1D linear blend tree, not a motion-time clip: each keyframe becomes a fixed clip placed at threshold `t`, so keyframes are joined with linear interpolation. `driven_by` must be a float, and `t` is any real value rather than normalized time, so a `-1..1` puppet axis is used as is.
     - A target missing from a keyframe is filled by linearly interpolating its neighbours, and held at the ends. Every generated clip writes the same key set.
     - Step and Bezier interpolation are not exposed here; write a `da.raw.keyed_clip` for them. `da.raw.clip({ time_by }, targets)` still contains fixed targets; `time_by` controls playback and does not turn the targets into curves.
-- `da.blend_layer(name, { da.puppet_layer(...), ... })` merges its children into one layer whose single state is a direct blend tree. Merging is explicit; layers written at the top level always stay separate.
+- `da.blend_layer(name[, opts], { da.puppet_layer(...), ... })` merges its children into one layer whose single state is a direct blend tree. Merging is explicit; layers written at the top level always stay separate.
     - Only layers that have no behaviors and are driven by a float can be merged, which is currently puppet layers only. Group and switch layers would need a float mirror of their parameter and are not accepted.
     - Each child becomes a direct field weighted by a float animator parameter fixed at `1.0`; the transform adds that parameter and it is not an expression parameter. The layer is Write Defaults on.
     - Children sum instead of overriding, so a target animated by two children of the same blend layer is an error. Overlap with other layers keeps the usual layer-order override.
@@ -219,6 +229,7 @@ return da.avatar({
     - A raw layer compiles its nested machines into `AnimatorLayer.machines` in depth-first order, so a machine follows its parent. Transform errors name a machine by its path from the layer, such as `Emote/Dance`.
     - Clip options on the motion of a state become the state's `Playback` (`speed`, `speed_by`, `time_by`). Inside a blend tree only `speed` is meaningful and it becomes the field's speed; `speed_by` and `time_by` there are errors.
     - Group and switch transitions have duration `0.0`. Raw transitions preserve the written `duration`, defaulting to `0.0`.
+    - Every compiled layer carries `LayerSettings`: the written weight, blending and interned mask, or weight `1`, override and no mask of its own.
     - Write Defaults is on only for the generated state of a blend layer; group, switch, puppet and raw states use off. The raw Lua API does not expose a Write Defaults option.
 - State behaviors
     - A layer control resolves to a `LayerRef`: the index of the controller in `Avatar.controllers` and of the layer in that controller. The controller holding the state must be Action, FX, Gesture or Additive, and the named layer must belong to that same controller. A layer of another playable layer and a layer of another controller of the same playable layer (a different priority, say) are separate errors; the latter names the controller it found by playable layer and priority. A child of a blend layer is merged and cannot be named. Each is a located error, as is an unknown layer.

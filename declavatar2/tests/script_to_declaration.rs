@@ -87,6 +87,7 @@ fn animation_only(entries: impl IntoIterator<Item = FixedAnimationEntry<Declared
 fn expressions_layer() -> Layer {
     Layer::Group(GroupLayer {
         name: "Expressions".into(),
+        settings: Default::default(),
         driven_by: Some(Unresolved::new("Emote".into())),
         symmetric: None,
         default: Some(animation_only([shape("eyelid_L", 0.3)])),
@@ -102,6 +103,7 @@ fn expressions_layer() -> Layer {
 fn hat_layer() -> Layer {
     Layer::Switch(SwitchLayer {
         name: "Hat".into(),
+        settings: Default::default(),
         driven_by: Some(Unresolved::new("Hat".into())),
         content: SwitchContent::Toggle(animation_only([active("Hat", true)])),
         at: at(18),

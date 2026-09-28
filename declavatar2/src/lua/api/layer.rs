@@ -4,16 +4,37 @@ use crate::{
     core::resolution::Unresolved,
     decl::{
         behavior::Content,
-        layer::{BlendLayer, GroupLayer, GroupOption, Layer, PuppetKeyframe, PuppetLayer, SwitchContent, SwitchLayer},
+        layer::{BlendLayer, GroupLayer, GroupOption, Layer, LayerSettings, PuppetKeyframe, PuppetLayer, SwitchContent, SwitchLayer},
     },
     lua::{
         content, list,
         location::caller_location,
         node,
-        options::{Options, with_children},
+        options::{Options, one_of, with_children},
         value::StrictBoolean,
     },
+    unity::animator::LayerBlending,
 };
+
+pub(crate) const BLENDINGS: &[(&str, LayerBlending)] = &[("override", LayerBlending::Override), ("additive", LayerBlending::Additive)];
+
+/// Takes the options every layer accepts: its starting weight, how it blends and its own avatar mask.
+pub(crate) fn settings(lua: &Lua, owner: &'static str, options: &mut Options) -> LuaResult<LayerSettings> {
+    let weight = options.take::<f64>("weight")?;
+    if let Some(weight) = weight
+        && !(0.0..=1.0).contains(&weight)
+    {
+        return Err(LuaError::runtime(format!("{owner}: `weight` is between 0 and 1, but {weight} was written")));
+    }
+    Ok(LayerSettings {
+        weight,
+        blending: options
+            .take::<String>("blending")?
+            .map(|written| one_of(owner, "blending", &written, BLENDINGS))
+            .transpose()?,
+        mask: options.take::<node::Asset>("mask")?.map(|asset| located(lua, asset.0)),
+    })
+}
 
 pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
     da.set("default", lua.create_function(default)?)?;
@@ -64,6 +85,7 @@ fn group_layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaRe
     let mut options = Options::new(OWNER, table);
     let driven_by = options.take::<String>("driven_by")?.map(|parameter| located(lua, parameter));
     let symmetric = options.take::<StrictBoolean>("symmetric")?.map(|value| value.0);
+    let settings = settings(lua, OWNER, &mut options)?;
     options.finish()?;
 
     let mut default = None;
@@ -80,6 +102,7 @@ fn group_layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaRe
 
     Ok(node::Layer(Layer::Group(GroupLayer {
         name,
+        settings,
         driven_by,
         symmetric,
         default,
@@ -93,6 +116,7 @@ fn switch_layer(lua: &Lua, (name, table, first, second): (String, Table, Table, 
 
     let mut options = Options::new(OWNER, Some(table));
     let driven_by = options.take::<String>("driven_by")?.map(|parameter| located(lua, parameter));
+    let settings = settings(lua, OWNER, &mut options)?;
     options.finish()?;
 
     let content = match second {
@@ -109,6 +133,7 @@ fn switch_layer(lua: &Lua, (name, table, first, second): (String, Table, Table, 
 
     Ok(node::Layer(Layer::Switch(SwitchLayer {
         name,
+        settings,
         driven_by,
         content,
         at: caller_location(lua),
@@ -142,10 +167,12 @@ fn puppet_layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaR
     let (table, keyframes) = with_children(lua, OWNER, arguments)?;
     let mut options = Options::new(OWNER, table);
     let driven_by = options.take::<String>("driven_by")?.map(|parameter| located(lua, parameter));
+    let settings = settings(lua, OWNER, &mut options)?;
     options.finish()?;
 
     Ok(node::Layer(Layer::Puppet(PuppetLayer {
         name,
+        settings,
         driven_by,
         keyframes: list::collect::<node::Keyframe>(lua, OWNER, &keyframes)?
             .into_iter()
@@ -155,12 +182,24 @@ fn puppet_layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaR
     })))
 }
 
-fn blend_layer(lua: &Lua, (name, children): (String, Table)) -> LuaResult<node::Layer> {
+fn blend_layer(lua: &Lua, (name, arguments): (String, Variadic<Value>)) -> LuaResult<node::Layer> {
     const OWNER: &str = "da.blend_layer";
+
+    let (table, children) = with_children(lua, OWNER, arguments)?;
+    let mut options = Options::new(OWNER, table);
+    let settings = settings(lua, OWNER, &mut options)?;
+    options.finish()?;
 
     let mut puppets = Vec::new();
     for (offset, child) in list::collect::<node::Layer>(lua, OWNER, &children)?.into_iter().enumerate() {
         match child.0 {
+            Layer::Puppet(puppet) if puppet.settings != LayerSettings::default() => {
+                return Err(LuaError::runtime(format!(
+                    "{OWNER}: `{}` in `{name}` sets `weight`, `blending` or `mask`, but a merged layer is not a layer of its own; \
+                     write them on `{name}`",
+                    puppet.name,
+                )));
+            }
             Layer::Puppet(puppet) => puppets.push(puppet),
             other => {
                 return Err(LuaError::runtime(format!(
@@ -175,6 +214,7 @@ fn blend_layer(lua: &Lua, (name, children): (String, Table)) -> LuaResult<node::
 
     Ok(node::Layer(Layer::Blend(BlendLayer {
         name,
+        settings,
         puppets,
         at: caller_location(lua),
     })))
@@ -427,6 +467,44 @@ mod tests {
         let message = eval_error("da.blend_layer('Merged', { da.switch_layer('Hat', {}, { da.object('Hat'):active() }) })");
         assert!(message.contains("da.blend_layer: entry 1 of `Merged` is a switch layer"), "{message}");
         assert!(message.contains("only a puppet layer can be merged"), "{message}");
+    }
+
+    #[rstest]
+    #[case::group("da.group_layer('L', { weight = 0.5, blending = 'additive', mask = da.asset.path('Assets/Hands.mask') }, {})")]
+    #[case::switch("da.switch_layer('L', { weight = 0.5, blending = 'additive', mask = da.asset.path('Assets/Hands.mask') }, {})")]
+    #[case::puppet("da.puppet_layer('L', { weight = 0.5, blending = 'additive', mask = da.asset.path('Assets/Hands.mask') }, {})")]
+    #[case::blend("da.blend_layer('L', { weight = 0.5, blending = 'additive', mask = da.asset.path('Assets/Hands.mask') }, {})")]
+    #[case::raw("da.raw.layer('L', { weight = 0.5, blending = 'additive', mask = da.asset.path('Assets/Hands.mask') }, {})")]
+    fn every_layer_takes_its_weight_blending_and_mask(#[case] expression: &str) {
+        let layer = layer_of(expression);
+        let settings = layer.settings();
+
+        assert_eq!(settings.weight, Some(0.5));
+        assert_eq!(settings.blending, Some(LayerBlending::Additive));
+        assert_eq!(
+            settings.mask.as_ref().map(|mask| &mask.value),
+            Some(&crate::unity::external::AssetLocator::Path("Assets/Hands.mask".into()))
+        );
+    }
+
+    #[rstest]
+    fn layer_settings_are_left_out_unless_written() {
+        assert_eq!(layer_of("da.group_layer('L', {}, {})").settings(), &LayerSettings::default());
+        assert_eq!(layer_of("da.blend_layer('L', {})").settings(), &LayerSettings::default());
+    }
+
+    #[rstest]
+    #[case::weight_above_one("da.group_layer('L', { weight = 1.5 }, {})", "`weight` is between 0 and 1, but 1.5 was written")]
+    #[case::weight_below_zero("da.group_layer('L', { weight = -0.5 }, {})", "`weight` is between 0 and 1, but -0.5 was written")]
+    #[case::unknown_blending("da.group_layer('L', { blending = 'multiply' }, {})", "blending `multiply` is not known")]
+    #[case::bare_mask("da.group_layer('L', { mask = 'Hands' }, {})", "option `mask`")]
+    #[case::merged_child(
+        "da.blend_layer('Merged', { da.puppet_layer('Arm', { weight = 0.5 }, {}) })",
+        "`Arm` in `Merged` sets `weight`, `blending` or `mask`"
+    )]
+    fn bad_layer_settings_are_rejected_where_they_are_written(#[case] expression: &str, #[case] expected: &str) {
+        let message = eval_error(expression);
+        assert!(message.contains(expected), "{message}");
     }
 
     #[rstest]
