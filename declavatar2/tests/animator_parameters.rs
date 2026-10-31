@@ -3,12 +3,12 @@ use declavatar2::{
     decl::{
         Avatar,
         controller::Controller,
-        parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup},
+        parameter::{Parameter, ParameterRepr, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup, Signedness},
     },
     transform::{TransformErrorKind, transform},
     unity::animator::{AnimatorParameter, AnimatorParameterOrigin, AnimatorParameterTypeDefault},
     vrchat::{
-        expr_parameter::{ExpressionParameterTypeDefault, ExpressionParameterWidth},
+        expr_parameter::{ExpressionParameterSignedness, ExpressionParameterTypeDefault, ExpressionParameterWidth},
         playable_layer::PlayableLayer,
     },
 };
@@ -38,16 +38,13 @@ fn declaration(value: PrimitiveParameterValue, scope: ParameterScope) -> Avatar 
 #[case(Some(-16_777_217))]
 #[case(Some(i32::MIN))]
 #[case(Some(i32::MAX))]
-fn integer_defaults_are_preserved(
-    #[case] default: Option<i32>,
-    #[values(ParameterScope::Synced, ParameterScope::Local, ParameterScope::Internal)] scope: ParameterScope,
-) {
+fn internal_integer_defaults_are_preserved(#[case] default: Option<i32>) {
     let avatar = transform(&declaration(
         PrimitiveParameterValue::Int {
             default: default.map(i64::from),
-            width: Some(8),
+            repr: None,
         },
-        scope,
+        ParameterScope::Internal,
     ))
     .unwrap();
 
@@ -55,21 +52,66 @@ fn integer_defaults_are_preserved(
         avatar.controllers[0].controller.parameters,
         vec![AnimatorParameter::create_int("Test", default)]
     );
+    assert!(avatar.expression_parameters.is_empty());
+}
+
+#[rstest]
+#[case(None)]
+#[case(Some(-128))]
+#[case(Some(0))]
+#[case(Some(127))]
+fn expression_integer_defaults_are_preserved(#[case] default: Option<i32>, #[values(ParameterScope::Synced, ParameterScope::Local)] scope: ParameterScope) {
+    let avatar = transform(&declaration(
+        PrimitiveParameterValue::Int {
+            default: default.map(i64::from),
+            repr: Some(ParameterRepr {
+                signedness: Signedness::Signed,
+                width: Some(8),
+            }),
+        },
+        scope,
+    ))
+    .unwrap();
+
     assert_eq!(
         avatar.controllers[0].controller.parameters[0].type_default,
         AnimatorParameterTypeDefault::Int(default)
     );
-    if scope == ParameterScope::Internal {
-        assert!(avatar.expression_parameters.is_empty());
-    } else {
-        assert_eq!(
-            avatar.expression_parameters[0].type_default,
-            ExpressionParameterTypeDefault::Int {
-                width: ExpressionParameterWidth::Specified(8),
-                default,
-            }
-        );
-    }
+    assert_eq!(
+        avatar.expression_parameters[0].type_default,
+        ExpressionParameterTypeDefault::Int {
+            width: ExpressionParameterWidth::Specified(8),
+            signedness: ExpressionParameterSignedness::Signed,
+            default,
+        }
+    );
+}
+
+#[rstest]
+#[case::unsigned_int(PrimitiveParameterValue::Int { default: Some(-1), repr: None }, "-1", "0..=255")]
+#[case::narrow_int(
+    PrimitiveParameterValue::Int { default: Some(4), repr: Some(ParameterRepr { signedness: Signedness::Signed, width: Some(3) }) },
+    "4",
+    "-4..=3"
+)]
+#[case::signed_float(PrimitiveParameterValue::Float { default: Some(-1.5), repr: None }, "-1.5", "-1.0..=1.0")]
+#[case::unsigned_float(
+    PrimitiveParameterValue::Float { default: Some(-0.25), repr: Some(ParameterRepr { signedness: Signedness::Unsigned, width: None }) },
+    "-0.25",
+    "0.0..=1.0"
+)]
+fn expression_defaults_outside_their_range_are_located_errors(
+    #[case] value: PrimitiveParameterValue,
+    #[case] written: &str,
+    #[case] range: &str,
+    #[values(ParameterScope::Synced, ParameterScope::Local)] scope: ParameterScope,
+) {
+    let errors = transform(&declaration(value, scope)).unwrap_err();
+    assert_eq!(errors.0.len(), 1);
+    assert_eq!(
+        errors.0[0].to_string(),
+        format!("parameters.lua:7: parameter `Test` holds {range}, but {written} is written")
+    );
 }
 
 #[rstest]
@@ -81,7 +123,7 @@ fn out_of_range_integer_defaults_are_located_errors(#[case] value: i64, #[values
     let errors = transform(&declaration(
         PrimitiveParameterValue::Int {
             default: Some(value),
-            width: None,
+            repr: None,
         },
         scope,
     ))
@@ -101,8 +143,8 @@ fn out_of_range_integer_defaults_are_located_errors(#[case] value: i64, #[values
 #[case(PrimitiveParameterValue::Bool { default: None }, AnimatorParameterTypeDefault::Bool(None))]
 #[case(PrimitiveParameterValue::Bool { default: Some(false) }, AnimatorParameterTypeDefault::Bool(Some(false)))]
 #[case(PrimitiveParameterValue::Bool { default: Some(true) }, AnimatorParameterTypeDefault::Bool(Some(true)))]
-#[case(PrimitiveParameterValue::Float { default: None, width: None }, AnimatorParameterTypeDefault::Float(None))]
-#[case(PrimitiveParameterValue::Float { default: Some(0.25), width: None }, AnimatorParameterTypeDefault::Float(Some(0.25)))]
+#[case(PrimitiveParameterValue::Float { default: None, repr: None }, AnimatorParameterTypeDefault::Float(None))]
+#[case(PrimitiveParameterValue::Float { default: Some(0.25), repr: None }, AnimatorParameterTypeDefault::Float(Some(0.25)))]
 fn defaults_keep_their_parameter_type(#[case] value: PrimitiveParameterValue, #[case] expected: AnimatorParameterTypeDefault) {
     let avatar = transform(&declaration(value, ParameterScope::Synced)).unwrap();
     assert_eq!(avatar.controllers[0].controller.parameters[0].type_default, expected);

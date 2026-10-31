@@ -73,7 +73,11 @@ Lua script
 
 #### Parameters
 
-- `da.bool(name, opts)`, `da.int(name, opts)`, `da.float(name, opts)` with `default`, `scope`, `save`; `width` is accepted only by int and float parameters.
+- `da.bool(name, opts)`, `da.int(name, opts)`, `da.float(name, opts)` with `default`, `scope`, `save`; `repr` is accepted only by int and float parameters.
+- `repr` is `u` or `s` followed by an optional bit width from 2 to 8 (`"u4"`, `"s8"`, `"s"`), matching VRChat's bit width and signedness for expression parameters. One string carries both because together they decide the range, but the signedness may be written alone so that the width stays unspecified. A width alone is not expressible; writing the type's default signedness with it costs nothing.
+    - Unsigned int holds `0..2^n-1` and signed int `-2^(n-1)..2^(n-1)-1`; float holds `-1..1` signed and `0..1` unsigned. Without `repr`, int is unsigned and float is signed, as in VRChat, and an unspecified width counts as 8 bits.
+    - `repr` on an `internal` parameter is an error, because it is not an expression parameter. Defaults and values of internal parameters are not range-checked.
+    - The `default` of a synced or local parameter must fit in its range, checked at the call site and again in the transform.
 - Parameter references are plain strings everywhere (`driven_by = "Emote"`).
 - VRChat provided parameters are declared in bulk with `da.provided("VRChat")` inside `parameters`. Referencing one without the declaration is an error, and so is a user parameter whose name collides with a provided one.
 - The group name of `da.provided` matches exactly, case included. An unknown name fails with the accepted names listed.
@@ -216,7 +220,8 @@ return da.avatar({
 - A `PlayableController` is one `da.controller` in declaration order: its playable layer, `MergeMode`, priority, `PathMode`, the interned mask asset and an `AnimatorController`. An unwritten option takes its default there, not in the declaration. Every controller carries the whole animator parameter list, because a replaced Gesture layer still needs `GestureLeft` and merging by name is harmless.
 - Errors are accumulated across parameter and layer collection, layer compilation and menu items. Within one failing layer or item, checking may stop at the first error; the remaining layers and items are still checked. Any error makes the whole transform fail, so a partial avatar is never returned. `TransformError` carries the `SourceLocation` of the reference that failed, falling back to the layer that holds it.
 - Parameters
-    - The animator parameter list follows the `parameters` block order, expanding each provided group in place, then appends generated parameters in compilation order. Expression parameters are the declared ones whose scope is not `internal`; the default scope is `synced` and `save` defaults to `false`. Unspecified bit widths stay `Unspecified`.
+    - The animator parameter list follows the `parameters` block order, expanding each provided group in place, then appends generated parameters in compilation order. Expression parameters are the declared ones whose scope is not `internal`; the default scope is `synced` and `save` defaults to `false`. Unspecified bit widths and signedness stay `Unspecified`, so the client can leave them to MA and NDMF instead of pinning a value that might conflict with another component.
+    - Values written for a declared synced or local int or float parameter are checked against its range: `da.drive_int` / `da.drive_float` and their state forms, `da.drive_puppet` values, both bounds of `da.drive_random_int` / `da.drive_random_float`, and the option count of a group layer it drives (`TooManyOptions`). Provided parameters are not checked.
     - Provided parameters are declared with their VRChat names (`AFK`, `VRMode`, ...) and take part in type checks like any other parameter, so a group layer can be driven by `GestureLeft`.
     - A group, switch or puppet layer whose `driven_by` is omitted follows the parameter named after the layer. The parameter must exist: group requires int, switch requires bool, and puppet requires float. No driver parameter is generated implicitly.
     - A blend layer generates one float parameter `{blend}/{child}` per child, fixed at `1.0`. A collision with an existing parameter is an error.
@@ -237,7 +242,7 @@ return da.avatar({
     - Two layers of one name never reach the layer control, within one controller or across controllers, because layer names are already unique across the avatar (`DuplicateLayer`), so no separate ambiguity check exists.
     - `da.play_audio` interns its source into the object path table and its clips into the asset table, and resolves `parameter` as an int parameter.
 - Menu: the number of controls in a menu is not limited; a menu holding more than VRChat can show is left to the client. An axis accepts a float parameter name or `da.drive_puppet(layer)` without a value; any other drive on an axis is an error.
-- Not done yet: the Unity client and bit width assignment for `Unspecified` widths. Gate/guard and exports were removed deliberately and are not pending features.
+- Not done yet: the Unity client and bit width assignment for `Unspecified` widths. Lerp duration of expression parameters is not exposed yet. Gate/guard and exports were removed deliberately and are not pending features.
 
 ### Animation Model
 

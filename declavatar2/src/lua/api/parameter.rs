@@ -1,13 +1,14 @@
 use mlua::{Error as LuaError, Lua, Result as LuaResult, Table, Value};
 
 use crate::{
-    decl::parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup},
+    decl::parameter::{Parameter, ParameterRepr, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup, Signedness},
     lua::{
         location::caller_location,
         node,
         options::{Options, one_of},
         value::StrictBoolean,
     },
+    vrchat::expr_parameter::ExpressionParameterWidth,
 };
 
 pub(crate) const SCOPES: &[(&str, ParameterScope)] = &[
@@ -34,7 +35,12 @@ fn bool_parameter(lua: &Lua, (name, table): (String, Option<Table>)) -> LuaResul
     let common = common_options(OWNER, &mut options)?;
     options.finish()?;
 
-    Ok(primitive(lua, name, PrimitiveParameterValue::Bool { default }, common))
+    Ok(node::Parameter(Parameter::Primitive(primitive(
+        lua,
+        name,
+        PrimitiveParameterValue::Bool { default },
+        common,
+    ))))
 }
 
 fn int_parameter(lua: &Lua, (name, table): (String, Option<Table>)) -> LuaResult<node::Parameter> {
@@ -42,11 +48,13 @@ fn int_parameter(lua: &Lua, (name, table): (String, Option<Table>)) -> LuaResult
 
     let mut options = Options::new(OWNER, table);
     let default = options.take::<Value>("default")?.map(|value| integer(OWNER, "default", &value)).transpose()?;
-    let width = width(OWNER, &mut options)?;
+    let repr = repr(OWNER, &mut options)?;
     let common = common_options(OWNER, &mut options)?;
     options.finish()?;
 
-    Ok(primitive(lua, name, PrimitiveParameterValue::Int { default, width }, common))
+    let parameter = primitive(lua, name, PrimitiveParameterValue::Int { default, repr }, common);
+    check_numeric(OWNER, &parameter)?;
+    Ok(node::Parameter(Parameter::Primitive(parameter)))
 }
 
 fn float_parameter(lua: &Lua, (name, table): (String, Option<Table>)) -> LuaResult<node::Parameter> {
@@ -54,11 +62,13 @@ fn float_parameter(lua: &Lua, (name, table): (String, Option<Table>)) -> LuaResu
 
     let mut options = Options::new(OWNER, table);
     let default = options.take::<Value>("default")?.map(|value| number(OWNER, "default", &value)).transpose()?;
-    let width = width(OWNER, &mut options)?;
+    let repr = repr(OWNER, &mut options)?;
     let common = common_options(OWNER, &mut options)?;
     options.finish()?;
 
-    Ok(primitive(lua, name, PrimitiveParameterValue::Float { default, width }, common))
+    let parameter = primitive(lua, name, PrimitiveParameterValue::Float { default, repr }, common);
+    check_numeric(OWNER, &parameter)?;
+    Ok(node::Parameter(Parameter::Primitive(parameter)))
 }
 
 fn provided(_: &Lua, group: String) -> LuaResult<node::Parameter> {
@@ -80,26 +90,59 @@ fn common_options(owner: &'static str, options: &mut Options) -> LuaResult<Commo
     Ok(CommonOptions { scope, save })
 }
 
-fn primitive(lua: &Lua, name: String, value: PrimitiveParameterValue, common: CommonOptions) -> node::Parameter {
-    node::Parameter(Parameter::Primitive(PrimitiveParameter {
+fn primitive(lua: &Lua, name: String, value: PrimitiveParameterValue, common: CommonOptions) -> PrimitiveParameter {
+    PrimitiveParameter {
         name,
         value,
         scope: common.scope,
         save: common.save,
         at: caller_location(lua),
-    }))
+    }
 }
 
-fn width(owner: &'static str, options: &mut Options) -> LuaResult<Option<u8>> {
-    let Some(value) = options.take::<Value>("width")? else {
+fn repr(owner: &'static str, options: &mut Options) -> LuaResult<Option<ParameterRepr>> {
+    let Some(written) = options.take::<String>("repr")? else {
         return Ok(None);
     };
-    let written = integer(owner, "width", &value)?;
-    u8::try_from(written)
-        .ok()
-        .filter(|width| *width > 0)
-        .map(Some)
-        .ok_or_else(|| LuaError::runtime(format!("{owner}: option `width` must be a positive bit count, but {written} was written")))
+    let mut chars = written.chars();
+    let signedness = match chars.next() {
+        Some('u') => Some(Signedness::Unsigned),
+        Some('s') => Some(Signedness::Signed),
+        _ => None,
+    };
+    let width = match chars.as_str() {
+        "" => Some(None),
+        bits => match bits.as_bytes() {
+            [digit @ b'0'..=b'9'] => Some(digit - b'0')
+                .filter(|width| (ExpressionParameterWidth::MIN_BIT_WIDTH..=ExpressionParameterWidth::MAX_BIT_WIDTH).contains(width))
+                .map(Some),
+            _ => None,
+        },
+    };
+    match (signedness, width) {
+        (Some(signedness), Some(width)) => Ok(Some(ParameterRepr { signedness, width })),
+        _ => Err(LuaError::runtime(format!(
+            "{owner}: option `repr` must be `u` or `s` followed by an optional bit width from 2 to 8, such as `u4` or `s`, but `{written}` was written"
+        ))),
+    }
+}
+
+fn check_numeric(owner: &'static str, parameter: &PrimitiveParameter) -> LuaResult<()> {
+    let written_repr = matches!(
+        parameter.value,
+        PrimitiveParameterValue::Int { repr: Some(_), .. } | PrimitiveParameterValue::Float { repr: Some(_), .. }
+    );
+    if written_repr && parameter.scope == Some(ParameterScope::Internal) {
+        return Err(LuaError::runtime(format!(
+            "{owner}: option `repr` cannot be written on an internal parameter, which is not an expression parameter"
+        )));
+    }
+    match parameter.default_out_of_range() {
+        Some((written, range)) => Err(LuaError::runtime(format!(
+            "{owner}: option `default` is {written}, but the parameter holds {range}"
+        ))),
+        None => Ok(()),
+    }
 }
 
 fn boolean(owner: &'static str, label: &str, value: &Value) -> LuaResult<bool> {
@@ -175,21 +218,108 @@ mod tests {
         assert_eq!(parameter.value, expected);
     }
 
+    fn repr(signedness: Signedness, width: Option<u8>) -> Option<ParameterRepr> {
+        Some(ParameterRepr { signedness, width })
+    }
+
     #[rstest]
-    #[case::bare("da.int('Emote')", PrimitiveParameterValue::Int { default: None, width: None })]
-    #[case::default("da.int('Emote', { default = 42 })", PrimitiveParameterValue::Int { default: Some(42), width: None })]
-    #[case::width("da.int('Emote', { width = 4 })", PrimitiveParameterValue::Int { default: None, width: Some(4) })]
-    #[case::negative("da.int('Emote', { default = -1 })", PrimitiveParameterValue::Int { default: Some(-1), width: None })]
-    fn an_int_parameter_carries_its_default_and_width(#[case] expression: &str, #[case] expected: PrimitiveParameterValue) {
+    #[case::bare("da.int('Emote')", PrimitiveParameterValue::Int { default: None, repr: None })]
+    #[case::default("da.int('Emote', { default = 42 })", PrimitiveParameterValue::Int { default: Some(42), repr: None })]
+    #[case::repr("da.int('Emote', { repr = 'u4' })", PrimitiveParameterValue::Int { default: None, repr: repr(Signedness::Unsigned, Some(4)) })]
+    #[case::signed_default("da.int('Emote', { repr = 's', default = -1 })", PrimitiveParameterValue::Int { default: Some(-1), repr: repr(Signedness::Signed, None) })]
+    fn an_int_parameter_carries_its_default_and_repr(#[case] expression: &str, #[case] expected: PrimitiveParameterValue) {
         assert_eq!(primitive_of(expression).value, expected);
     }
 
     #[rstest]
-    #[case::bare("da.float('Blend')", PrimitiveParameterValue::Float { default: None, width: None })]
-    #[case::fractional("da.float('Blend', { default = 0.25 })", PrimitiveParameterValue::Float { default: Some(0.25), width: None })]
-    #[case::integer_written("da.float('Blend', { default = 1 })", PrimitiveParameterValue::Float { default: Some(1.0), width: None })]
+    #[case::bare("da.float('Blend')", PrimitiveParameterValue::Float { default: None, repr: None })]
+    #[case::fractional("da.float('Blend', { default = 0.25 })", PrimitiveParameterValue::Float { default: Some(0.25), repr: None })]
+    #[case::integer_written("da.float('Blend', { default = 1 })", PrimitiveParameterValue::Float { default: Some(1.0), repr: None })]
+    #[case::repr("da.float('Blend', { repr = 'u2' })", PrimitiveParameterValue::Float { default: None, repr: repr(Signedness::Unsigned, Some(2)) })]
     fn a_float_parameter_accepts_an_integer_default(#[case] expression: &str, #[case] expected: PrimitiveParameterValue) {
         assert_eq!(primitive_of(expression).value, expected);
+    }
+
+    #[rstest]
+    #[case::unsigned("u", Signedness::Unsigned, None)]
+    #[case::signed("s", Signedness::Signed, None)]
+    #[case::narrowest("u2", Signedness::Unsigned, Some(2))]
+    #[case::widest("s8", Signedness::Signed, Some(8))]
+    fn a_repr_is_a_signedness_and_an_optional_width(#[case] written: &str, #[case] signedness: Signedness, #[case] width: Option<u8>) {
+        let parameter = primitive_of(&format!("da.int('Emote', {{ repr = '{written}' }})"));
+        assert_eq!(
+            parameter.value,
+            PrimitiveParameterValue::Int {
+                default: None,
+                repr: repr(signedness, width)
+            }
+        );
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::width_alone("4")]
+    #[case::rust_style("i4")]
+    #[case::uppercase("U4")]
+    #[case::too_narrow("u1")]
+    #[case::too_wide("s9")]
+    #[case::trailing("u4 ")]
+    #[case::plus_sign("u+4")]
+    #[case::leading_zero("u04")]
+    fn a_malformed_repr_is_rejected(#[case] written: &str) {
+        let message = rejected(&format!("da.int('Emote', {{ repr = '{written}' }})"));
+        assert!(
+            message.contains(&format!(
+                "da.int: option `repr` must be `u` or `s` followed by an optional bit width from 2 to 8, such as `u4` or `s`, but `{written}` was written"
+            )),
+            "{message}"
+        );
+    }
+
+    #[rstest]
+    #[case::unsigned_default("da.int('Emote', { default = 255 })")]
+    #[case::unsigned_narrow("da.int('Emote', { repr = 'u4', default = 15 })")]
+    #[case::signed_low("da.int('Emote', { repr = 's4', default = -8 })")]
+    #[case::signed_high("da.int('Emote', { repr = 's4', default = 7 })")]
+    #[case::signed_float("da.float('Blend', { default = -1 })")]
+    #[case::unsigned_float("da.float('Blend', { repr = 'u', default = 1 })")]
+    #[case::internal_int("da.int('Emote', { scope = 'internal', default = -1000 })")]
+    #[case::internal_float("da.float('Blend', { scope = 'internal', default = 5 })")]
+    fn a_default_inside_the_range_is_accepted(#[case] expression: &str) {
+        primitive_of(expression);
+    }
+
+    #[rstest]
+    #[case::negative_int("da.int('Emote', { default = -1 })", "da.int: option `default` is -1, but the parameter holds 0..=255")]
+    #[case::unsigned_narrow(
+        "da.int('Emote', { repr = 'u4', default = 16 })",
+        "da.int: option `default` is 16, but the parameter holds 0..=15"
+    )]
+    #[case::signed_low(
+        "da.int('Emote', { repr = 's4', default = -9 })",
+        "da.int: option `default` is -9, but the parameter holds -8..=7"
+    )]
+    #[case::signed_high(
+        "da.int('Emote', { repr = 's', default = 128 })",
+        "da.int: option `default` is 128, but the parameter holds -128..=127"
+    )]
+    #[case::signed_float("da.float('Blend', { default = 1.5 })", "da.float: option `default` is 1.5, but the parameter holds -1.0..=1.0")]
+    #[case::unsigned_float(
+        "da.float('Blend', { repr = 'u8', default = -0.5 })",
+        "da.float: option `default` is -0.5, but the parameter holds 0.0..=1.0"
+    )]
+    fn a_default_outside_the_range_is_rejected(#[case] expression: &str, #[case] expected: &str) {
+        let message = rejected(expression);
+        assert!(message.contains(expected), "{message}");
+    }
+
+    #[rstest]
+    fn an_internal_parameter_has_no_repr() {
+        let message = rejected("da.int('Emote', { scope = 'internal', repr = 'u4' })");
+        assert!(
+            message.contains("da.int: option `repr` cannot be written on an internal parameter, which is not an expression parameter"),
+            "{message}"
+        );
     }
 
     #[rstest]
@@ -225,18 +355,17 @@ mod tests {
     }
 
     #[rstest]
-    fn a_bool_parameter_has_no_width() {
-        let message = rejected("da.bool('Hat', { width = 4 })");
-        assert!(message.contains("da.bool: unknown option `width`"), "{message}");
+    #[case::repr("repr")]
+    #[case::width("width")]
+    fn a_bool_parameter_has_no_repr(#[case] option: &str) {
+        let message = rejected(&format!("da.bool('Hat', {{ {option} = 'u4' }})"));
+        assert!(message.contains(&format!("da.bool: unknown option `{option}`")), "{message}");
     }
 
     #[rstest]
-    #[case::zero("0")]
-    #[case::negative("-1")]
-    #[case::too_wide("300")]
-    fn a_width_must_be_a_positive_bit_count(#[case] written: &str) {
-        let message = rejected(&format!("da.int('Emote', {{ width = {written} }})"));
-        assert!(message.contains("must be a positive bit count"), "{message}");
+    fn width_is_not_an_option() {
+        let message = rejected("da.int('Emote', { width = 4 })");
+        assert!(message.contains("da.int: unknown option `width`"), "{message}");
     }
 
     #[rstest]

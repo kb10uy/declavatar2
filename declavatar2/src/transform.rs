@@ -101,7 +101,7 @@ mod tests {
     fn int_parameter(name: &str) -> decl::Parameter {
         decl::Parameter::Primitive(decl::PrimitiveParameter {
             name: name.into(),
-            value: decl::PrimitiveParameterValue::Int { default: None, width: None },
+            value: decl::PrimitiveParameterValue::Int { default: None, repr: None },
             scope: None,
             save: None,
             at: None,

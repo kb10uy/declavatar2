@@ -342,10 +342,10 @@ mod tests {
     fn context() -> Context {
         let declaration = Avatar {
             parameters: vec![
-                parameter("Emote", PrimitiveParameterValue::Int { default: None, width: None }),
+                parameter("Emote", PrimitiveParameterValue::Int { default: None, repr: None }),
                 parameter("Hat", PrimitiveParameterValue::Bool { default: None }),
-                parameter("Blend", PrimitiveParameterValue::Float { default: None, width: None }),
-                parameter("Weight", PrimitiveParameterValue::Float { default: None, width: None }),
+                parameter("Blend", PrimitiveParameterValue::Float { default: None, repr: None }),
+                parameter("Weight", PrimitiveParameterValue::Float { default: None, repr: None }),
             ],
             ..Avatar::default()
         };

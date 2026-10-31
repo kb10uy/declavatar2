@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::{
     core::resolution::SourceLocation,
     unity::{animation::CurveError, value::AnimatedValueType},
-    vrchat::playable_layer::PlayableLayer,
+    vrchat::{expr_parameter::ValueRange, playable_layer::PlayableLayer},
 };
 
 /// One thing the transform could not accept, and where in the script it was written.
@@ -85,6 +85,17 @@ pub enum TransformErrorKind {
 
     #[error("integer parameter `{name}` has default {value}, which is outside the i32 range")]
     ParameterDefaultOutOfRange { name: String, value: i64 },
+
+    #[error("parameter `{name}` holds {range}, but {value} is written")]
+    ParameterValueOutOfRange { name: String, value: String, range: ValueRange },
+
+    #[error("group layer `{layer}` has {options} options, but parameter `{parameter}` holds {range}")]
+    TooManyOptions {
+        layer: String,
+        parameter: String,
+        options: usize,
+        range: ValueRange,
+    },
 
     #[error("parameter `{name}` is {found:?}, but {expected:?} is needed here")]
     ParameterTypeMismatch {
