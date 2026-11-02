@@ -120,7 +120,7 @@ impl ValueRange {
 
     pub fn contains_float(&self, value: f64) -> bool {
         match self {
-            ValueRange::Int(range) => value.fract() == 0.0 && range.contains(&(value as i64)),
+            ValueRange::Int(range) => (*range.start() as f64..=*range.end() as f64).contains(&value),
             ValueRange::Float(range) => range.contains(&value),
         }
     }
