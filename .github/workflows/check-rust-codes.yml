@@ -34,3 +34,19 @@ jobs:
       - shell: "bash"
         run: |
           cargo test --all-features
+
+  licenses:
+    name: "Licenses"
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v6"
+      - uses: "actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6" # v1.16.1
+      - uses: "taiki-e/install-action@v2"
+        with:
+          tool: "cargo-deny,cargo-about"
+
+      - shell: "bash"
+        run: |
+          cargo deny check licenses
+          cargo deny check advisories
+          cargo about generate about.hbs --output-file licenses.html

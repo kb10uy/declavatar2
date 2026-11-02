@@ -69,12 +69,17 @@ jobs:
       contents: "write"
     steps:
       - uses: "actions/checkout@v6"
+      - uses: "actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6" # v1.16.1
+      - uses: "taiki-e/install-action@v2"
+        with:
+          tool: "cargo-about"
       - uses: "actions/download-artifact@v4"
         with:
           path: "./dist"
       - shell: "bash"
         run: |
           mkdir -p ./release
+          cargo about generate about.hbs --output-file ./release/licenses.html
           cp ./dist/da2-x86_64-pc-windows-msvc/da2.dll ./release/da2-x86_64-pc-windows-msvc.dll
           cp ./dist/da2-x86_64-unknown-linux-gnu/libda2.so ./release/libda2-x86_64-unknown-linux-gnu.so
           cp ./dist/da2-universal-apple-darwin/libda2.dylib ./release/libda2-universal-apple-darwin.dylib
