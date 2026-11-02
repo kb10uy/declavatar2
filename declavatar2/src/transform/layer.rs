@@ -68,6 +68,17 @@ fn group(context: &mut Context, group: &GroupLayer) -> Result<AnimatorLayer, Tra
     let parameter = context
         .parameters
         .resolve_typed(&driver(group.driven_by.as_ref(), &group.name, group.at.as_ref()), AnimatedValueType::Int)?;
+    if let Some(range) = context.parameters.value_range(&parameter.value)
+        && !range.contains_int(group.options.len() as i64)
+    {
+        return Err(TransformErrorKind::TooManyOptions {
+            layer: group.name.clone(),
+            parameter: parameter.value.clone(),
+            options: group.options.len(),
+            range,
+        }
+        .at(group.at.clone()));
+    }
 
     let mut default = group.default.clone().unwrap_or_default();
     default
@@ -341,13 +352,13 @@ mod tests {
             behavior::{Behavior, Drive},
             controller::Controller,
             layer::GroupOption,
-            parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue},
+            parameter::{Parameter, ParameterRepr, PrimitiveParameter, PrimitiveParameterValue, Signedness},
         },
         unity::{
             animator::{AnimatedGameObjectProperty, AnimatedGameObjectTarget, AnimatedRendererProperty, AnimatedRendererTarget},
             external::ObjectPath,
         },
-        vrchat::playable_layer::PlayableLayer,
+        vrchat::{expr_parameter::ValueRange, playable_layer::PlayableLayer},
     };
 
     fn parameter(name: &str, value: PrimitiveParameterValue) -> Parameter {
@@ -363,10 +374,20 @@ mod tests {
     fn context(layers: Vec<Layer>) -> Context {
         let declaration = Avatar {
             parameters: vec![
-                parameter("Emote", PrimitiveParameterValue::Int { default: None, width: None }),
+                parameter("Emote", PrimitiveParameterValue::Int { default: None, repr: None }),
                 parameter("Hat", PrimitiveParameterValue::Bool { default: None }),
-                parameter("Wink", PrimitiveParameterValue::Float { default: None, width: None }),
-                parameter("Brow", PrimitiveParameterValue::Float { default: None, width: None }),
+                parameter("Wink", PrimitiveParameterValue::Float { default: None, repr: None }),
+                parameter("Brow", PrimitiveParameterValue::Float { default: None, repr: None }),
+                parameter(
+                    "Narrow",
+                    PrimitiveParameterValue::Int {
+                        default: None,
+                        repr: Some(ParameterRepr {
+                            signedness: Signedness::Signed,
+                            width: Some(3),
+                        }),
+                    },
+                ),
             ],
             controllers: vec![Controller::new(PlayableLayer::Fx, layers)],
             ..Avatar::default()
@@ -604,6 +625,32 @@ mod tests {
             }
             .at(located_at(11))
         );
+    }
+
+    #[rstest]
+    #[case::fits(3, true)]
+    #[case::overflows(4, false)]
+    fn group_options_fit_in_the_driver(#[case] count: usize, #[case] fits: bool) {
+        let layer = GroupLayer {
+            driven_by: Some("Narrow".to_owned().into()),
+            options: (0..count).map(|index| option(&format!("option{index}"), [shape("smile", 1.0)])).collect(),
+            ..expressions(None)
+        };
+        let result = compile(&mut context(vec![Layer::Group(layer.clone())]), &Layer::Group(layer));
+        if fits {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            assert_eq!(
+                result.unwrap_err(),
+                TransformErrorKind::TooManyOptions {
+                    layer: "Expressions".into(),
+                    parameter: "Narrow".into(),
+                    options: 4,
+                    range: ValueRange::Int(-4..=3),
+                }
+                .at(located_at(10))
+            );
+        }
     }
 
     #[rstest]

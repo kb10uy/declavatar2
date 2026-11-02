@@ -140,6 +140,7 @@ impl Context {
             ParameterDriveTarget::Set { parameter, value } => {
                 let resolved = parameters.resolve(parameter)?;
                 let value = cast(value, resolved.context).map_err(|error| error.or_at(parameter.at.as_ref()))?;
+                parameters.check_value(&resolved, &value, parameter.at.as_ref())?;
                 ParameterDriveTarget::Set { parameter: resolved, value }
             }
             ParameterDriveTarget::Add { parameter, value } => {
@@ -155,18 +156,30 @@ impl Context {
                 let value = cast(value, resolved.context).map_err(|error| error.or_at(parameter.at.as_ref()))?;
                 ParameterDriveTarget::Add { parameter: resolved, value }
             }
-            ParameterDriveTarget::RandomInt { parameter, range } => ParameterDriveTarget::RandomInt {
-                parameter: parameters.resolve_typed(parameter, AnimatedValueType::Int)?,
-                range: *range,
-            },
+            ParameterDriveTarget::RandomInt { parameter, range } => {
+                let resolved = parameters.resolve_typed(parameter, AnimatedValueType::Int)?;
+                for bound in range {
+                    parameters.check_value(&resolved, &AnimatedValue::Int(*bound), parameter.at.as_ref())?;
+                }
+                ParameterDriveTarget::RandomInt {
+                    parameter: resolved,
+                    range: *range,
+                }
+            }
             ParameterDriveTarget::RandomBool { parameter, chance } => ParameterDriveTarget::RandomBool {
                 parameter: parameters.resolve_typed(parameter, AnimatedValueType::Bool)?,
                 chance: *chance,
             },
-            ParameterDriveTarget::RandomFloat { parameter, range } => ParameterDriveTarget::RandomFloat {
-                parameter: parameters.resolve_typed(parameter, AnimatedValueType::Float)?,
-                range: *range,
-            },
+            ParameterDriveTarget::RandomFloat { parameter, range } => {
+                let resolved = parameters.resolve_typed(parameter, AnimatedValueType::Float)?;
+                for bound in range {
+                    parameters.check_value(&resolved, &AnimatedValue::Float(*bound), parameter.at.as_ref())?;
+                }
+                ParameterDriveTarget::RandomFloat {
+                    parameter: resolved,
+                    range: *range,
+                }
+            }
             ParameterDriveTarget::Copy { from, to } => ParameterDriveTarget::Copy {
                 from: parameters.resolve(from)?,
                 to: parameters.resolve(to)?,
@@ -217,11 +230,14 @@ impl Context {
                     return Err(kind_mismatch(layer, "puppet", info));
                 };
                 let parameter = self.parameters.resolve_typed(parameter, AnimatedValueType::Float)?;
-                Ok((parameter, AnimatedValue::Float(value.unwrap_or(1.0))))
+                let value = AnimatedValue::Float(value.unwrap_or(1.0));
+                self.parameters.check_value(&parameter, &value, layer.at.as_ref())?;
+                Ok((parameter, value))
             }
             Drive::Parameter { parameter, value } => {
                 let resolved = self.parameters.resolve(parameter)?;
                 let value = cast(value, resolved.context).map_err(|error| error.or_at(parameter.at.as_ref()))?;
+                self.parameters.check_value(&resolved, &value, parameter.at.as_ref())?;
                 Ok((resolved, value))
             }
         }
@@ -273,9 +289,10 @@ mod tests {
             behavior::Content,
             controller::Controller,
             layer::{GroupLayer, GroupOption, Layer, PuppetLayer, SwitchContent, SwitchLayer},
-            parameter::{Parameter, PrimitiveParameter, PrimitiveParameterValue},
+            parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue},
         },
         unity::state::GenericValue,
+        vrchat::expr_parameter::ValueRange,
         vrchat::playable_layer::PlayableLayer,
         vrchat::state_behaviour::{TrackingControl, TrackingControlMode, TrackingControlTarget},
     };
@@ -304,10 +321,17 @@ mod tests {
     fn context() -> Context {
         let declaration = Avatar {
             parameters: vec![
-                parameter("Emote", PrimitiveParameterValue::Int { default: None, width: None }),
+                parameter("Emote", PrimitiveParameterValue::Int { default: None, repr: None }),
                 parameter("Hat", PrimitiveParameterValue::Bool { default: None }),
-                parameter("Wink", PrimitiveParameterValue::Float { default: None, width: None }),
-                parameter("Weight", PrimitiveParameterValue::Float { default: None, width: None }),
+                parameter("Wink", PrimitiveParameterValue::Float { default: None, repr: None }),
+                parameter("Weight", PrimitiveParameterValue::Float { default: None, repr: None }),
+                Parameter::Primitive(PrimitiveParameter {
+                    name: "Counter".into(),
+                    value: PrimitiveParameterValue::Int { default: None, repr: None },
+                    scope: Some(ParameterScope::Internal),
+                    save: None,
+                    at: None,
+                }),
             ],
             controllers: vec![Controller::new(
                 PlayableLayer::Fx,
@@ -371,6 +395,10 @@ mod tests {
         Drive::Parameter { parameter: "Weight".to_owned().into(), value: AnimatedValue::Int(1) },
         (resolved("Weight", AnimatedValueType::Float), AnimatedValue::Float(1.0)),
     )]
+    #[case::unbounded_internal(
+        Drive::Parameter { parameter: "Counter".to_owned().into(), value: AnimatedValue::Int(-1000) },
+        (resolved("Counter", AnimatedValueType::Int), AnimatedValue::Int(-1000)),
+    )]
     fn drives_resolve_to_a_parameter_and_a_value(#[case] drive: Drive, #[case] expected: (ParameterRef, AnimatedValue<()>)) {
         assert_eq!(context().drive(&drive).unwrap(), expected);
     }
@@ -395,6 +423,18 @@ mod tests {
     #[case::wrong_value(
         Drive::Parameter { parameter: located("Hat", 3), value: AnimatedValue::Vector2([0.0, 0.0].into()) },
         TransformErrorKind::ValueTypeMismatch { expected: AnimatedValueType::Bool, found: AnimatedValueType::Vector2 },
+    )]
+    #[case::int_out_of_range(
+        Drive::Parameter { parameter: located("Emote", 3), value: AnimatedValue::Int(256) },
+        TransformErrorKind::ParameterValueOutOfRange { name: "Emote".into(), value: "256".into(), range: ValueRange::Int(0..=255) },
+    )]
+    #[case::float_out_of_range(
+        Drive::Parameter { parameter: located("Weight", 3), value: AnimatedValue::Int(2) },
+        TransformErrorKind::ParameterValueOutOfRange { name: "Weight".into(), value: "2.0".into(), range: ValueRange::Float(-1.0..=1.0) },
+    )]
+    #[case::puppet_out_of_range(
+        Drive::Puppet { layer: located("Wink", 3), value: Some(-1.5) },
+        TransformErrorKind::ParameterValueOutOfRange { name: "Wink".into(), value: "-1.5".into(), range: ValueRange::Float(-1.0..=1.0) },
     )]
     fn a_bad_drive_is_reported_where_it_was_written(#[case] drive: Drive, #[case] expected: TransformErrorKind) {
         assert_eq!(context().drive(&drive).unwrap_err(), expected.at(Some(at(3))));
@@ -503,6 +543,18 @@ mod tests {
     #[case::copy_from_nowhere(
         ParameterDriveTarget::Copy { from: located("Missing", 3), to: located("Emote", 4) },
         TransformErrorKind::UnknownParameter { name: "Missing".into() },
+    )]
+    #[case::set_out_of_range(
+        ParameterDriveTarget::Set { parameter: located("Emote", 3), value: AnimatedValue::Int(-1) },
+        TransformErrorKind::ParameterValueOutOfRange { name: "Emote".into(), value: "-1".into(), range: ValueRange::Int(0..=255) },
+    )]
+    #[case::random_int_out_of_range(
+        ParameterDriveTarget::RandomInt { parameter: located("Emote", 3), range: [0, 300] },
+        TransformErrorKind::ParameterValueOutOfRange { name: "Emote".into(), value: "300".into(), range: ValueRange::Int(0..=255) },
+    )]
+    #[case::random_float_out_of_range(
+        ParameterDriveTarget::RandomFloat { parameter: located("Wink", 3), range: [-2.0, 1.0] },
+        TransformErrorKind::ParameterValueOutOfRange { name: "Wink".into(), value: "-2.0".into(), range: ValueRange::Float(-1.0..=1.0) },
     )]
     fn a_bad_state_drive_is_reported_where_it_was_written(#[case] written: ParameterDriveTarget<Declared>, #[case] expected: TransformErrorKind) {
         let error = context().behaviors(&[Behavior::ParameterDrive(written)]).unwrap_err();

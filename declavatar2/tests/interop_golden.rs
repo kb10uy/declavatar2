@@ -22,7 +22,9 @@ use declavatar2::{
     vrchat::{
         ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlayableLayer,
         PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
+        expr_parameter::{
+            ExpressionParameter, ExpressionParameterSignedness, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup,
+        },
     },
 };
 use nalgebra::{Quaternion, UnitQuaternion, Vector2, Vector3, Vector4};
@@ -988,6 +990,7 @@ fn fixture_avatar() -> Avatar {
                 name: "Emote".into(),
                 type_default: ExpressionParameterTypeDefault::Int {
                     width: ExpressionParameterWidth::Specified(8),
+                    signedness: ExpressionParameterSignedness::Unspecified,
                     default: Some(42),
                 },
                 saved: false,
@@ -1003,6 +1006,7 @@ fn fixture_avatar() -> Avatar {
                 name: "Blend".into(),
                 type_default: ExpressionParameterTypeDefault::Float {
                     width: ExpressionParameterWidth::Unspecified,
+                    signedness: ExpressionParameterSignedness::Signed,
                     default: None,
                 },
                 saved: false,
@@ -1017,7 +1021,8 @@ fn fixture_avatar() -> Avatar {
             ExpressionParameter {
                 name: "Tiny".into(),
                 type_default: ExpressionParameterTypeDefault::Float {
-                    width: ExpressionParameterWidth::Specified(1),
+                    width: ExpressionParameterWidth::Specified(2),
+                    signedness: ExpressionParameterSignedness::Unsigned,
                     default: Some(f32::MIN_POSITIVE),
                 },
                 saved: false,

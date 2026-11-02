@@ -1,3 +1,8 @@
+use std::{
+    fmt::{self, Display},
+    ops::RangeInclusive,
+};
+
 use crate::unity::AnimatedValueType;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,10 +27,18 @@ pub enum ExpressionParameterTypeDefault {
     Bool(Option<bool>),
 
     /// Integer.
-    Int { width: ExpressionParameterWidth, default: Option<i32> },
+    Int {
+        width: ExpressionParameterWidth,
+        signedness: ExpressionParameterSignedness,
+        default: Option<i32>,
+    },
 
-    /// Float \[-1.0, 1.0\].
-    Float { width: ExpressionParameterWidth, default: Option<f32> },
+    /// Float, \[-1.0, 1.0\] when signed and \[0.0, 1.0\] when unsigned.
+    Float {
+        width: ExpressionParameterWidth,
+        signedness: ExpressionParameterSignedness,
+        default: Option<f32>,
+    },
 }
 
 /// Represents [`ExpressionParameter`] bit width for Int/Float parameters.
@@ -35,8 +48,91 @@ pub enum ExpressionParameterWidth {
     /// Actual width will be determined from its usage.
     Unspecified,
 
-    /// The width is specified by the script.
+    /// The width is specified by the script, in `MIN_BIT_WIDTH..=MAX_BIT_WIDTH`.
     Specified(u8),
+}
+
+impl ExpressionParameterWidth {
+    pub const MIN_BIT_WIDTH: u8 = 2;
+    pub const MAX_BIT_WIDTH: u8 = 8;
+
+    /// The bit count values are checked against. An unspecified width never exceeds the widest one.
+    pub fn bits(self) -> u8 {
+        match self {
+            ExpressionParameterWidth::Unspecified => Self::MAX_BIT_WIDTH,
+            ExpressionParameterWidth::Specified(width) => width,
+        }
+    }
+}
+
+/// Represents [`ExpressionParameter`] signedness for Int/Float parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpressionParameterSignedness {
+    /// The signedness is not specified by the script.
+    /// VRChat takes unsigned for Int and signed for Float.
+    Unspecified,
+
+    Unsigned,
+    Signed,
+}
+
+impl ExpressionParameterSignedness {
+    /// Whether values of the given type are signed, with VRChat's default applied when unspecified.
+    pub fn is_signed(self, value_type: AnimatedValueType) -> bool {
+        match self {
+            ExpressionParameterSignedness::Unspecified => value_type == AnimatedValueType::Float,
+            ExpressionParameterSignedness::Unsigned => false,
+            ExpressionParameterSignedness::Signed => true,
+        }
+    }
+}
+
+/// Values a numeric expression parameter can hold.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValueRange {
+    Int(RangeInclusive<i64>),
+    Float(RangeInclusive<f64>),
+}
+
+impl ValueRange {
+    pub fn of(value_type: AnimatedValueType, width: ExpressionParameterWidth, signedness: ExpressionParameterSignedness) -> Option<Self> {
+        let signed = signedness.is_signed(value_type);
+        match value_type {
+            AnimatedValueType::Int => {
+                let bits = u32::from(width.bits());
+                Some(ValueRange::Int(if signed {
+                    -(1 << (bits - 1))..=(1 << (bits - 1)) - 1
+                } else {
+                    0..=(1 << bits) - 1
+                }))
+            }
+            AnimatedValueType::Float => Some(ValueRange::Float(if signed { -1.0..=1.0 } else { 0.0..=1.0 })),
+            _ => None,
+        }
+    }
+
+    pub fn contains_int(&self, value: i64) -> bool {
+        match self {
+            ValueRange::Int(range) => range.contains(&value),
+            ValueRange::Float(range) => range.contains(&(value as f64)),
+        }
+    }
+
+    pub fn contains_float(&self, value: f64) -> bool {
+        match self {
+            ValueRange::Int(range) => (*range.start() as f64..=*range.end() as f64).contains(&value),
+            ValueRange::Float(range) => range.contains(&value),
+        }
+    }
+}
+
+impl Display for ValueRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueRange::Int(range) => write!(f, "{}..={}", range.start(), range.end()),
+            ValueRange::Float(range) => write!(f, "{:?}..={:?}", range.start(), range.end()),
+        }
+    }
 }
 
 impl ExpressionParameterTypeDefault {
@@ -48,6 +144,15 @@ impl ExpressionParameterTypeDefault {
                 ExpressionParameterWidth::Unspecified => None,
                 ExpressionParameterWidth::Specified(w) => Some(*w),
             },
+        }
+    }
+
+    /// Values this parameter can hold, or `None` for Bool.
+    pub fn value_range(&self) -> Option<ValueRange> {
+        match *self {
+            ExpressionParameterTypeDefault::Bool(_) => None,
+            ExpressionParameterTypeDefault::Int { width, signedness, .. } => ValueRange::of(AnimatedValueType::Int, width, signedness),
+            ExpressionParameterTypeDefault::Float { width, signedness, .. } => ValueRange::of(AnimatedValueType::Float, width, signedness),
         }
     }
 

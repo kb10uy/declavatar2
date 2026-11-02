@@ -282,7 +282,7 @@ fn condition(context: &Context, condition: &Condition) -> Result<AnimatorConditi
         }
     };
 
-    Ok(match (condition, value_type) {
+    let compiled = match (condition, value_type) {
         (Condition::Zero(_), AnimatedValueType::Bool) => AnimatorCondition::IfNot(parameter),
         (Condition::Zero(_), AnimatedValueType::Int) => AnimatorCondition::Equals(parameter, 0),
         (Condition::NonZero(_), AnimatedValueType::Bool) => AnimatorCondition::If(parameter),
@@ -305,7 +305,16 @@ fn condition(context: &Context, condition: &Condition) -> Result<AnimatorConditi
         (Condition::Ne(..), _) => return Err(unsupported("ne")),
         (Condition::Gt(..), _) => return Err(unsupported("gt")),
         (Condition::Lt(..), _) => return Err(unsupported("lt")),
-    })
+    };
+    let written = match &compiled {
+        AnimatorCondition::Equals(parameter, value) | AnimatorCondition::NotEqual(parameter, value) => Some((parameter, AnimatedValue::Int(*value))),
+        AnimatorCondition::Greater(parameter, value) | AnimatorCondition::Less(parameter, value) => Some((parameter, AnimatedValue::Float(*value))),
+        AnimatorCondition::If(_) | AnimatorCondition::IfNot(_) => None,
+    };
+    if let Some((parameter, value)) = written {
+        context.parameters.check_value(parameter, &value, at)?;
+    }
+    Ok(compiled)
 }
 
 #[cfg(test)]
@@ -327,6 +336,7 @@ mod tests {
         },
         transform::layer::located_at,
         unity::external::AssetLocator,
+        vrchat::expr_parameter::ValueRange,
     };
 
     fn parameter(name: &str, value: PrimitiveParameterValue) -> Parameter {
@@ -342,10 +352,10 @@ mod tests {
     fn context() -> Context {
         let declaration = Avatar {
             parameters: vec![
-                parameter("Emote", PrimitiveParameterValue::Int { default: None, width: None }),
+                parameter("Emote", PrimitiveParameterValue::Int { default: None, repr: None }),
                 parameter("Hat", PrimitiveParameterValue::Bool { default: None }),
-                parameter("Blend", PrimitiveParameterValue::Float { default: None, width: None }),
-                parameter("Weight", PrimitiveParameterValue::Float { default: None, width: None }),
+                parameter("Blend", PrimitiveParameterValue::Float { default: None, repr: None }),
+                parameter("Weight", PrimitiveParameterValue::Float { default: None, repr: None }),
             ],
             ..Avatar::default()
         };
@@ -739,6 +749,8 @@ mod tests {
     #[case::int_lt(Condition::Lt("Emote".to_owned().into(), AnimatedValue::Int(3)), AnimatorCondition::Less(emote(), 3.0))]
     #[case::float_gt(Condition::Gt("Blend".to_owned().into(), AnimatedValue::Float(0.5)), AnimatorCondition::Greater(blend(), 0.5))]
     #[case::float_lt_int(Condition::Lt("Blend".to_owned().into(), AnimatedValue::Int(1)), AnimatorCondition::Less(blend(), 1.0))]
+    #[case::int_gt_fraction(Condition::Gt("Emote".to_owned().into(), AnimatedValue::Float(2.5)), AnimatorCondition::Greater(emote(), 2.5))]
+    #[case::int_eq_highest(Condition::Eq("Emote".to_owned().into(), AnimatedValue::Int(255)), AnimatorCondition::Equals(emote(), 255))]
     fn conditions_take_the_comparison_of_the_parameter_type(#[case] written: Condition, #[case] expected: AnimatorCondition) {
         assert_eq!(condition(&context(), &written).unwrap(), expected);
     }
@@ -774,6 +786,31 @@ mod tests {
                 found: AnimatedValueType::Vector2,
             }
             .at(located_at(61))
+        );
+    }
+
+    #[rstest]
+    #[case::int_eq(Condition::Eq(located("Emote", 62), AnimatedValue::Int(256)), "Emote", "256", ValueRange::Int(0..=255))]
+    #[case::int_ne(Condition::Ne(located("Emote", 62), AnimatedValue::Int(-1)), "Emote", "-1", ValueRange::Int(0..=255))]
+    #[case::int_gt(Condition::Gt(located("Emote", 62), AnimatedValue::Int(300)), "Emote", "300.0", ValueRange::Int(0..=255))]
+    #[case::int_lt(Condition::Lt(located("Emote", 62), AnimatedValue::Float(-0.5)), "Emote", "-0.5", ValueRange::Int(0..=255))]
+    #[case::float_gt(Condition::Gt(located("Blend", 62), AnimatedValue::Float(1.5)), "Blend", "1.5", ValueRange::Float(-1.0..=1.0))]
+    #[case::float_lt(Condition::Lt(located("Blend", 62), AnimatedValue::Int(-2)), "Blend", "-2.0", ValueRange::Float(-1.0..=1.0))]
+    fn a_condition_value_outside_the_parameter_range_is_rejected(
+        #[case] written: Condition,
+        #[case] name: &str,
+        #[case] value: &str,
+        #[case] range: ValueRange,
+    ) {
+        let error = condition(&context(), &written).unwrap_err();
+        assert_eq!(
+            error,
+            TransformErrorKind::ParameterValueOutOfRange {
+                name: name.into(),
+                value: value.into(),
+                range,
+            }
+            .at(located_at(62))
         );
     }
 }

@@ -14,7 +14,7 @@ Every blob starts with 16 bytes. All multi-byte integers in the whole blob are l
 |---|---|---|---|
 | 0 | 4 | `magic` | `"DA2a"` (`44 41 32 61`) for Avatar, `"DA2d"` (`44 41 32 64`) for Diagnostics |
 | 4 | 2 | `schema_version` | u16. Version of the encoding rules below. Currently `1`. |
-| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `4` for Avatar and `1` for Diagnostics. |
+| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `5` for Avatar and `1` for Diagnostics. |
 | 8 | 4 | `reserved` | Zero. |
 | 12 | 4 | `payload_len` | u32. Number of bytes following the header. |
 | 16 | `payload_len` | `payload` | See the payload sections. |
@@ -104,13 +104,15 @@ ExpressionParameter:
   name   : string
   kind   : enum
     0 Bool  : default option<bool>
-    1 Int   : width u8, default option<i32>
-    2 Float : width u8, default option<f32>
+    1 Int   : width u8, signedness u8, default option<i32>
+    2 Float : width u8, signedness u8, default option<f32>
   saved  : bool
   synced : bool
 ```
 
-`width` is the bit width; `0` means the script did not specify one.
+`width` is the bit width, from `2` to `8`; `0` means the script did not specify one. Any other value is a decode error.
+
+`signedness` is `0` Unspecified, `1` Unsigned, `2` Signed. Unspecified leaves the choice to VRChat, which takes unsigned for Int and signed for Float. Like `width`, it maps directly onto the Default representation of Modular Avatar and NDMF, so an unwritten value does not conflict with another component declaring the same parameter.
 
 ### Controllers
 

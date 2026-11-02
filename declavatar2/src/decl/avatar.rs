@@ -62,10 +62,7 @@ mod tests {
                 Parameter::Provided(ProvidedParameterGroup::Vrchat),
                 Parameter::Primitive(PrimitiveParameter {
                     name: "Emote".into(),
-                    value: PrimitiveParameterValue::Int {
-                        default: Some(42),
-                        width: None,
-                    },
+                    value: PrimitiveParameterValue::Int { default: Some(42), repr: None },
                     scope: None,
                     save: None,
                     at: None,

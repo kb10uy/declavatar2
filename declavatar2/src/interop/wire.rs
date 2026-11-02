@@ -52,6 +52,9 @@ pub enum DecodeError {
     #[error("{0:#x} is not an option tag")]
     InvalidOptionTag(u8),
 
+    #[error("{0} is not a bit width of an expression parameter")]
+    InvalidBitWidth(u8),
+
     #[error("{value} is not a discriminator of {type_name}")]
     InvalidDiscriminator { type_name: &'static str, value: u8 },
 

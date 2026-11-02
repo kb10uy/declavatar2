@@ -168,7 +168,7 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "da2"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "cbindgen",
  "declavatar2",
@@ -177,7 +177,7 @@ dependencies = [
 
 [[package]]
 name = "declavatar2"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "either",
  "mlua",
@@ -375,9 +375,9 @@ dependencies = [
 
 [[package]]
 name = "luajit-src"
-version = "210.7.3+1ee778a"
+version = "210.7.4+c6ffc14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "869665372263eb337b14f480cfb864b89f12eade4eb42cb415f71517b4a67572"
+checksum = "1db548b001f0b7da416daf0ffae963912bae6cad1799fa9f4eaba09da6dba837"
 dependencies = [
  "cc",
  "which",

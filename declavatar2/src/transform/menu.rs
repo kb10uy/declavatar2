@@ -142,10 +142,10 @@ mod tests {
     fn context() -> Context {
         let declaration = Avatar {
             parameters: vec![
-                parameter("Emote", PrimitiveParameterValue::Int { default: None, width: None }),
+                parameter("Emote", PrimitiveParameterValue::Int { default: None, repr: None }),
                 parameter("Hat", PrimitiveParameterValue::Bool { default: None }),
-                parameter("Wink", PrimitiveParameterValue::Float { default: None, width: None }),
-                parameter("Move", PrimitiveParameterValue::Float { default: None, width: None }),
+                parameter("Wink", PrimitiveParameterValue::Float { default: None, repr: None }),
+                parameter("Move", PrimitiveParameterValue::Float { default: None, repr: None }),
             ],
             controllers: vec![Controller::new(
                 PlayableLayer::Fx,

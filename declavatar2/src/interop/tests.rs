@@ -39,7 +39,9 @@ use crate::{
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
+        expr_parameter::{
+            ExpressionParameter, ExpressionParameterSignedness, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup,
+        },
         playable_layer::PlayableLayer,
         state_behaviour::{
             ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio,
@@ -246,8 +248,8 @@ enum_cases! {
     }
     cases {
         bool: ExpressionParameterTypeDefault::Bool(_) => ExpressionParameterTypeDefault::Bool(Some(true)),
-        int: ExpressionParameterTypeDefault::Int { .. } => ExpressionParameterTypeDefault::Int { width: ExpressionParameterWidth::Specified(8), default: Some(i32::MIN) },
-        float: ExpressionParameterTypeDefault::Float { .. } => ExpressionParameterTypeDefault::Float { width: ExpressionParameterWidth::Unspecified, default: None },
+        int: ExpressionParameterTypeDefault::Int { .. } => ExpressionParameterTypeDefault::Int { width: ExpressionParameterWidth::Specified(8), signedness: ExpressionParameterSignedness::Signed, default: Some(i32::MIN) },
+        float: ExpressionParameterTypeDefault::Float { .. } => ExpressionParameterTypeDefault::Float { width: ExpressionParameterWidth::Unspecified, signedness: ExpressionParameterSignedness::Unspecified, default: None },
     }
 }
 
@@ -257,7 +259,18 @@ enum_cases! {
     }
     cases {
         unspecified: ExpressionParameterWidth::Unspecified => ExpressionParameterWidth::Unspecified,
-        specified: ExpressionParameterWidth::Specified(_) => ExpressionParameterWidth::Specified(255),
+        specified: ExpressionParameterWidth::Specified(_) => ExpressionParameterWidth::Specified(2),
+    }
+}
+
+enum_cases! {
+    fn expression_parameter_signedness(value: ExpressionParameterSignedness) {
+        round_trip(value);
+    }
+    cases {
+        unspecified: ExpressionParameterSignedness::Unspecified => ExpressionParameterSignedness::Unspecified,
+        unsigned: ExpressionParameterSignedness::Unsigned => ExpressionParameterSignedness::Unsigned,
+        signed: ExpressionParameterSignedness::Signed => ExpressionParameterSignedness::Signed,
     }
 }
 
@@ -830,12 +843,24 @@ enum_cases! {
 }
 
 #[rstest]
-fn zero_bit_widths_have_no_representation() {
+#[case::zero(0)]
+#[case::one(1)]
+#[case::nine(9)]
+fn bit_widths_outside_vrchat_have_no_representation(#[case] width: u8) {
     let mut writer = Writer::new();
     assert_eq!(
-        ExpressionParameterWidth::Specified(0).encode(&mut writer).unwrap_err(),
-        EncodeError::Unrepresentable("a specified width of zero bits")
+        ExpressionParameterWidth::Specified(width).encode(&mut writer).unwrap_err(),
+        EncodeError::Unrepresentable("a bit width outside 2..=8")
     );
+}
+
+#[rstest]
+#[case::one(1)]
+#[case::nine(9)]
+fn bit_widths_outside_vrchat_are_rejected_on_decode(#[case] width: u8) {
+    let bytes = [width];
+    let mut reader = Reader::new(&bytes);
+    assert_eq!(reader.decode::<ExpressionParameterWidth>().unwrap_err(), DecodeError::InvalidBitWidth(width));
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -1041,6 +1066,7 @@ fn the_menu_resolves_parameters_against_every_list() {
             name: "Expr".into(),
             type_default: ExpressionParameterTypeDefault::Int {
                 width: ExpressionParameterWidth::Unspecified,
+                signedness: ExpressionParameterSignedness::Unspecified,
                 default: None,
             },
             saved: false,

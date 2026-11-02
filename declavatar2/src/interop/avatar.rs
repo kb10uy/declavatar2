@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::Debug,
+    ops::RangeInclusive,
 };
 
 use nalgebra::{Quaternion, UnitQuaternion, Vector2, Vector3, Vector4};
@@ -33,7 +34,9 @@ use crate::{
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
+        expr_parameter::{
+            ExpressionParameter, ExpressionParameterSignedness, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup,
+        },
         playable_layer::PlayableLayer,
         state_behaviour::{
             ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio,
@@ -338,17 +341,25 @@ wire_struct! {
 wire_enum! {
     ExpressionParameterTypeDefault {
         0 Bool(default),
-        1 Int { width, default },
-        2 Float { width, default },
+        1 Int { width, signedness, default },
+        2 Float { width, signedness, default },
+    }
+
+    ExpressionParameterSignedness {
+        0 Unspecified,
+        1 Unsigned,
+        2 Signed,
     }
 }
+
+const BIT_WIDTHS: RangeInclusive<u8> = ExpressionParameterWidth::MIN_BIT_WIDTH..=ExpressionParameterWidth::MAX_BIT_WIDTH;
 
 impl Encode for ExpressionParameterWidth {
     fn encode(&self, writer: &mut Writer) -> Result<(), EncodeError> {
         match self {
             ExpressionParameterWidth::Unspecified => writer.u8(0),
-            ExpressionParameterWidth::Specified(0) => return Err(EncodeError::Unrepresentable("a specified width of zero bits")),
-            ExpressionParameterWidth::Specified(width) => writer.u8(*width),
+            ExpressionParameterWidth::Specified(width) if BIT_WIDTHS.contains(width) => writer.u8(*width),
+            ExpressionParameterWidth::Specified(_) => return Err(EncodeError::Unrepresentable("a bit width outside 2..=8")),
         }
         Ok(())
     }
@@ -356,10 +367,11 @@ impl Encode for ExpressionParameterWidth {
 
 impl Decode for ExpressionParameterWidth {
     fn decode(reader: &mut Reader<'_>) -> Result<Self, DecodeError> {
-        Ok(match reader.u8()? {
-            0 => ExpressionParameterWidth::Unspecified,
-            width => ExpressionParameterWidth::Specified(width),
-        })
+        match reader.u8()? {
+            0 => Ok(ExpressionParameterWidth::Unspecified),
+            width if BIT_WIDTHS.contains(&width) => Ok(ExpressionParameterWidth::Specified(width)),
+            width => Err(DecodeError::InvalidBitWidth(width)),
+        }
     }
 }
 

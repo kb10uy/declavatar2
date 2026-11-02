@@ -104,6 +104,9 @@ local da = {}
 --- How far a parameter is visible.
 ---@alias da.Scope "synced"|"local"|"internal"
 
+--- Signedness and optional bit width of an int or float expression parameter.
+---@alias da.Repr "u"|"s"|"u2"|"u3"|"u4"|"u5"|"u6"|"u7"|"u8"|"s2"|"s3"|"s4"|"s5"|"s6"|"s7"|"s8"
+
 --- Set of parameters that the platform defines.
 ---@alias da.ProvidedGroup "VRChat"
 
@@ -224,14 +227,14 @@ local da = {}
 ---@field save? boolean
 
 ---@class da.IntOptions
----@field default? integer Must be written as an integer; `1.5` is an error.
----@field width? integer Positive bit count.
+---@field default? integer Must be written as an integer and fit in the range `repr` gives; `1.5` is an error.
+---@field repr? da.Repr Unsigned (default) or signed, with a bit width from 2 to 8. Not accepted on an internal parameter.
 ---@field scope? da.Scope
 ---@field save? boolean
 
 ---@class da.FloatOptions
----@field default? number An integer is accepted and converted.
----@field width? integer Positive bit count.
+---@field default? number An integer is accepted and converted. Must fit in `-1..1`, or `0..1` when unsigned.
+---@field repr? da.Repr Signed (default) or unsigned, with a bit width from 2 to 8. Not accepted on an internal parameter.
 ---@field scope? da.Scope
 ---@field save? boolean
 

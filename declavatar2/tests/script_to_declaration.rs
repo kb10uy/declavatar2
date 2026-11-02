@@ -133,10 +133,7 @@ fn the_documented_example_declares_the_avatar_it_describes() {
                 Parameter::Provided(ProvidedParameterGroup::Vrchat),
                 Parameter::Primitive(PrimitiveParameter {
                     name: "Emote".into(),
-                    value: PrimitiveParameterValue::Int {
-                        default: Some(42),
-                        width: None,
-                    },
+                    value: PrimitiveParameterValue::Int { default: Some(42), repr: None },
                     scope: None,
                     save: None,
                     at: at(9),
@@ -171,10 +168,7 @@ fn a_symbol_the_host_withholds_drops_everything_guarded_by_it() {
             Parameter::Provided(ProvidedParameterGroup::Vrchat),
             Parameter::Primitive(PrimitiveParameter {
                 name: "Emote".into(),
-                value: PrimitiveParameterValue::Int {
-                    default: Some(42),
-                    width: None,
-                },
+                value: PrimitiveParameterValue::Int { default: Some(42), repr: None },
                 scope: None,
                 save: None,
                 at: at(9),

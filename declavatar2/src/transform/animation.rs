@@ -177,7 +177,7 @@ mod tests {
         let declaration = Avatar {
             parameters: vec![Parameter::Primitive(PrimitiveParameter {
                 name: "Blend".into(),
-                value: PrimitiveParameterValue::Float { default: None, width: None },
+                value: PrimitiveParameterValue::Float { default: None, repr: None },
                 scope: None,
                 save: None,
                 at: None,

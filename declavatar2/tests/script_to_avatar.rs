@@ -21,7 +21,9 @@ use declavatar2::{
     vrchat::{
         ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlayableLayerControl,
         PlaybackOrder, TemporaryPoseSpace,
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup},
+        expr_parameter::{
+            ExpressionParameter, ExpressionParameterSignedness, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup,
+        },
         playable_layer::PlayableLayer,
     },
 };
@@ -80,6 +82,7 @@ fn the_documented_example_compiles_to_the_avatar_it_describes() {
                 name: "Emote".into(),
                 type_default: ExpressionParameterTypeDefault::Int {
                     width: ExpressionParameterWidth::Unspecified,
+                    signedness: ExpressionParameterSignedness::Unspecified,
                     default: Some(42),
                 },
                 saved: false,

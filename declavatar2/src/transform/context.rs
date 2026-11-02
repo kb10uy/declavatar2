@@ -5,16 +5,16 @@ use crate::{
     core::resolution::{Resolved, SourceLocation, Unresolved},
     decl::{
         layer::Layer,
-        parameter::{Parameter, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup},
+        parameter::{Parameter, ParameterRepr, ParameterScope, PrimitiveParameter, PrimitiveParameterValue, ProvidedParameterGroup},
     },
     transform::error::{TransformError, TransformErrorKind},
     unity::{
         animator::{AnimatorParameter, AnimatorParameterOrigin, AnimatorParameterTypeDefault},
         external::Externals,
-        value::AnimatedValueType,
+        value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ExpressionParameterWidth, VrchatProvidedParameter},
+        expr_parameter::{ExpressionParameter, ExpressionParameterTypeDefault, ValueRange, VrchatProvidedParameter},
         playable_layer::PlayableLayer,
     },
 };
@@ -259,6 +259,14 @@ impl ParameterTable {
             ),
             PrimitiveParameterValue::Float { default, .. } => AnimatorParameterTypeDefault::Float(default.map(|value| value as f32)),
         };
+        if let Some((value, range)) = parameter.default_out_of_range() {
+            return Err(TransformErrorKind::ParameterValueOutOfRange {
+                name: parameter.name.clone(),
+                value,
+                range,
+            }
+            .at(parameter.at.clone()));
+        }
         self.push(ParameterEntry {
             name: parameter.name.clone(),
             type_default,
@@ -329,6 +337,35 @@ impl ParameterTable {
         Ok(resolved)
     }
 
+    /// Values the named parameter can hold, when it is a numeric expression parameter the script declares.
+    pub fn value_range(&self, name: &str) -> Option<ValueRange> {
+        match &self.entries[*self.index.get(name)?].source {
+            ParameterSource::Declared(declared) => declared.value_range(),
+            _ => None,
+        }
+    }
+
+    /// Checks that a value written for the parameter is one the parameter can hold.
+    pub fn check_value(&self, parameter: &ParameterRef, value: &AnimatedValue<()>, at: Option<&SourceLocation>) -> Result<(), TransformError> {
+        let Some(range) = self.value_range(&parameter.value) else {
+            return Ok(());
+        };
+        let (inside, written) = match value {
+            AnimatedValue::Int(value) => (range.contains_int(*value), value.to_string()),
+            AnimatedValue::Float(value) => (range.contains_float(*value), format!("{value:?}")),
+            _ => return Ok(()),
+        };
+        if inside {
+            return Ok(());
+        }
+        Err(TransformErrorKind::ParameterValueOutOfRange {
+            name: parameter.value.clone(),
+            value: written,
+            range,
+        }
+        .at(at.cloned()))
+    }
+
     pub fn animator_parameters(&self) -> Vec<AnimatorParameter> {
         self.entries
             .iter()
@@ -360,15 +397,16 @@ fn expression_parameter(declared: &PrimitiveParameter, compiled: AnimatorParamet
     if scope == ParameterScope::Internal {
         return None;
     }
-    let width = match declared.value {
+    let repr = match declared.value {
         PrimitiveParameterValue::Bool { .. } => None,
-        PrimitiveParameterValue::Int { width, .. } | PrimitiveParameterValue::Float { width, .. } => width,
-    }
-    .map_or(ExpressionParameterWidth::Unspecified, ExpressionParameterWidth::Specified);
+        PrimitiveParameterValue::Int { repr, .. } | PrimitiveParameterValue::Float { repr, .. } => repr,
+    };
+    let width = ParameterRepr::width_of(repr);
+    let signedness = ParameterRepr::signedness_of(repr);
     let type_default = match compiled {
         AnimatorParameterTypeDefault::Bool(default) => ExpressionParameterTypeDefault::Bool(default),
-        AnimatorParameterTypeDefault::Int(default) => ExpressionParameterTypeDefault::Int { width, default },
-        AnimatorParameterTypeDefault::Float(default) => ExpressionParameterTypeDefault::Float { width, default },
+        AnimatorParameterTypeDefault::Int(default) => ExpressionParameterTypeDefault::Int { width, signedness, default },
+        AnimatorParameterTypeDefault::Float(default) => ExpressionParameterTypeDefault::Float { width, signedness, default },
     };
     Some(ExpressionParameter {
         name: declared.name.clone(),
@@ -389,8 +427,12 @@ mod tests {
             behavior::Content,
             controller::Controller,
             layer::{BlendLayer, GroupLayer, GroupOption, PuppetLayer, SwitchContent, SwitchLayer},
+            parameter::Signedness,
         },
-        vrchat::playable_layer::PlayableLayer,
+        vrchat::{
+            expr_parameter::{ExpressionParameterSignedness, ExpressionParameterWidth},
+            playable_layer::PlayableLayer,
+        },
     };
 
     fn at(line: u32) -> Option<SourceLocation> {
@@ -411,7 +453,7 @@ mod tests {
     }
 
     fn int(name: &str, line: u32) -> Parameter {
-        primitive(name, PrimitiveParameterValue::Int { default: None, width: None }, line)
+        primitive(name, PrimitiveParameterValue::Int { default: None, repr: None }, line)
     }
 
     fn collect(declaration: Avatar) -> (Context, Vec<TransformError>) {
@@ -428,7 +470,10 @@ mod tests {
                     "Wink",
                     PrimitiveParameterValue::Float {
                         default: Some(0.5),
-                        width: Some(4),
+                        repr: Some(ParameterRepr {
+                            signedness: Signedness::Unsigned,
+                            width: Some(4),
+                        }),
                     },
                     3,
                 ),
@@ -544,7 +589,10 @@ mod tests {
                     name: "Synced".into(),
                     value: PrimitiveParameterValue::Int {
                         default: Some(3),
-                        width: Some(4),
+                        repr: Some(ParameterRepr {
+                            signedness: Signedness::Signed,
+                            width: Some(4),
+                        }),
                     },
                     scope: None,
                     save: Some(true),
@@ -561,7 +609,7 @@ mod tests {
                     name: "Internal".into(),
                     value: PrimitiveParameterValue::Float {
                         default: Some(1.0),
-                        width: None,
+                        repr: None,
                     },
                     scope: Some(ParameterScope::Internal),
                     save: None,
@@ -578,6 +626,7 @@ mod tests {
                     name: "Synced".into(),
                     type_default: ExpressionParameterTypeDefault::Int {
                         width: ExpressionParameterWidth::Specified(4),
+                        signedness: ExpressionParameterSignedness::Signed,
                         default: Some(3),
                     },
                     saved: true,
