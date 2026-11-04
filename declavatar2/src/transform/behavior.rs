@@ -16,7 +16,10 @@ use crate::{
         state::GenericStateBehavior,
         value::{AnimatedValue, AnimatedValueCast, AnimatedValueType},
     },
-    vrchat::state_behaviour::{AudioSetting, BlendablePlayable, LayerControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlaybackOrder},
+    vrchat::state_behaviour::{
+        AudioSetting, BlendablePlayable, BlendshapesSetSource, BlendshapesSetWeight, LayerControl, ParameterDrive, ParameterDriveTarget, PlayAudio,
+        PlaybackOrder,
+    },
 };
 
 /// Type names that `da.behavior` must not carry, because the layer index they take is only known to the client.
@@ -64,6 +67,11 @@ impl Context {
             Behavior::TemporaryPoseSpace(control) => avatar::Behavior::TemporaryPoseSpace(*control),
             Behavior::PlayableLayerControl(control) => avatar::Behavior::PlayableLayerControl(control.clone()),
             Behavior::PlayAudio(audio) => avatar::Behavior::PlayAudio(self.play_audio(audio)?),
+            Behavior::BlendshapesSetWeight(weight) => avatar::Behavior::BlendshapesSetWeight(BlendshapesSetWeight {
+                name: weight.name.clone(),
+                source: self.blendshapes_set_source(&weight.source)?,
+                lerp_speed: weight.lerp_speed,
+            }),
         })
     }
 
@@ -131,6 +139,22 @@ impl Context {
             stop_on_enter: audio.stop_on_enter,
             play_on_exit: audio.play_on_exit,
             stop_on_exit: audio.stop_on_exit,
+        })
+    }
+
+    fn blendshapes_set_source(&self, source: &BlendshapesSetSource<Declared>) -> Result<BlendshapesSetSource<Compiled>, TransformError> {
+        Ok(match source {
+            BlendshapesSetSource::Value(weight) => BlendshapesSetSource::Value(*weight),
+            BlendshapesSetSource::Parameter(parameter) => BlendshapesSetSource::Parameter(self.parameters.resolve(parameter)?),
+            BlendshapesSetSource::RangedParameter {
+                parameter,
+                from_range,
+                to_range,
+            } => BlendshapesSetSource::RangedParameter {
+                parameter: self.parameters.resolve(parameter)?,
+                from_range: *from_range,
+                to_range: *to_range,
+            },
         })
     }
 
@@ -559,5 +583,54 @@ mod tests {
     fn a_bad_state_drive_is_reported_where_it_was_written(#[case] written: ParameterDriveTarget<Declared>, #[case] expected: TransformErrorKind) {
         let error = context().behaviors(&[Behavior::ParameterDrive(written)]).unwrap_err();
         assert_eq!(error, expected.at(Some(at(3))));
+    }
+
+    #[rstest]
+    #[case::value(BlendshapesSetSource::Value(0.5), BlendshapesSetSource::Value(0.5))]
+    #[case::bool(
+        BlendshapesSetSource::Parameter(located("Hat", 3)),
+        BlendshapesSetSource::Parameter(resolved("Hat", AnimatedValueType::Bool))
+    )]
+    #[case::int(
+        BlendshapesSetSource::Parameter(located("Emote", 3)),
+        BlendshapesSetSource::Parameter(resolved("Emote", AnimatedValueType::Int))
+    )]
+    #[case::ranged(
+        BlendshapesSetSource::RangedParameter { parameter: located("Wink", 3), from_range: [-1.0, 1.0], to_range: [1.0, 0.0] },
+        BlendshapesSetSource::RangedParameter { parameter: resolved("Wink", AnimatedValueType::Float), from_range: [-1.0, 1.0], to_range: [1.0, 0.0] },
+    )]
+    fn a_blendshapes_set_keeps_its_name_and_resolves_its_parameter(
+        #[case] written: BlendshapesSetSource<Declared>,
+        #[case] expected: BlendshapesSetSource<Compiled>,
+    ) {
+        let compiled = context()
+            .behaviors(&[Behavior::BlendshapesSetWeight(BlendshapesSetWeight {
+                name: "Happy".into(),
+                source: written,
+                lerp_speed: 2.0,
+            })])
+            .unwrap();
+        assert_eq!(
+            compiled,
+            vec![avatar::Behavior::BlendshapesSetWeight(BlendshapesSetWeight {
+                name: "Happy".into(),
+                source: expected,
+                lerp_speed: 2.0,
+            })]
+        );
+    }
+
+    #[rstest]
+    #[case::plain(BlendshapesSetSource::Parameter(located("Missing", 3)))]
+    #[case::ranged(BlendshapesSetSource::RangedParameter { parameter: located("Missing", 3), from_range: [0.0, 1.0], to_range: [0.0, 1.0] })]
+    fn a_blendshapes_set_read_from_an_unknown_parameter_is_reported_where_it_was_written(#[case] source: BlendshapesSetSource<Declared>) {
+        let error = context()
+            .behaviors(&[Behavior::BlendshapesSetWeight(BlendshapesSetWeight {
+                name: "Happy".into(),
+                source,
+                lerp_speed: 0.0,
+            })])
+            .unwrap_err();
+        assert_eq!(error, TransformErrorKind::UnknownParameter { name: "Missing".into() }.at(Some(at(3))));
     }
 }

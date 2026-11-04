@@ -39,8 +39,9 @@ use crate::{
         },
         playable_layer::PlayableLayer,
         state_behaviour::{
-            ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio,
-            PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
+            ApplySettings, AudioSetting, BlendablePlayable, BlendshapesSetSource, BlendshapesSetWeight, LayerControl, LocomotionControl, ParameterDrive,
+            ParameterDriveTarget, PlayAudio, PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode,
+            TrackingControlTarget,
         },
     },
 };
@@ -923,6 +924,7 @@ wire_enum! {
         5 TemporaryPoseSpace(control),
         6 PlayableLayerControl(control),
         7 PlayAudio(audio),
+        8 BlendshapesSetWeight(weight),
     }
 
     ParameterDriveTarget<Compiled> {
@@ -959,6 +961,7 @@ wire_struct! {
     TemporaryPoseSpace { enter, fixed_delay, delay }
     PlayableLayerControl { playable, goal_weight, blend_duration }
     PlayAudio<Compiled> { source, order, clips, volume, pitch, looping, delay, play_on_enter, stop_on_enter, play_on_exit, stop_on_exit }
+    BlendshapesSetWeight<Compiled> { name, source, lerp_speed }
 }
 
 wire_enum! {
@@ -980,6 +983,12 @@ wire_enum! {
         0 Always,
         1 IfStopped,
         2 Never,
+    }
+
+    BlendshapesSetSource<Compiled> {
+        0 Value(weight),
+        1 Parameter(parameter),
+        2 RangedParameter { parameter, from_range, to_range },
     }
 }
 

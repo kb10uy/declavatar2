@@ -14,7 +14,7 @@ Every blob starts with 16 bytes. All multi-byte integers in the whole blob are l
 |---|---|---|---|
 | 0 | 4 | `magic` | `"DA2a"` (`44 41 32 61`) for Avatar, `"DA2d"` (`44 41 32 64`) for Diagnostics |
 | 4 | 2 | `schema_version` | u16. Version of the encoding rules below. Currently `1`. |
-| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `5` for Avatar and `1` for Diagnostics. |
+| 6 | 2 | `data_version` | u16. Version of the payload layout of this blob kind. Currently `6` for Avatar and `1` for Diagnostics. |
 | 8 | 4 | `reserved` | Zero. |
 | 12 | 4 | `payload_len` | u32. Number of bytes following the header. |
 | 16 | `payload_len` | `payload` | See the payload sections. |
@@ -306,6 +306,7 @@ Behavior: enum
                            pitch_min f64, pitch_max f64, pitch_apply u8,
                            loop bool, loop_apply u8,
                            delay f64, play_on_enter bool, stop_on_enter bool, play_on_exit bool, stop_on_exit bool
+  8 BlendshapesSetWeight : name string, source BlendshapesSetSource, lerp_speed f64
 
 LayerRef:
   controller : u32                         (index into Avatar.controllers; always the controller holding the state)
@@ -320,6 +321,11 @@ PlaybackOrder: enum
   3 Parameter : param
 
 clips_apply, volume_apply, pitch_apply, loop_apply: 0 Always, 1 IfStopped, 2 Never
+
+BlendshapesSetSource: enum
+  0 Value           : weight f64
+  1 Parameter       : parameter param
+  2 RangedParameter : parameter param, from_min f64, from_max f64, to_min f64, to_max f64
 
 ParameterDriveTarget: enum
   0 Set         : parameter param, value AnimatedValue
@@ -353,6 +359,8 @@ A `LayerControl` names the layer it blends by position rather than by an animato
 The controller index is redundant with the position of the state, and is kept so that a reference names its layer on its own. A reference into another controller is excluded because the client may have to finalize each controller on its own before they are merged, and a layer index into another controller cannot be known at that point.
 
 `playable` of a `PlayableLayerControl` and the `PlaybackOrder` and apply discriminators follow the numbering of the VRChat enums they stand for. `enter` of a `TemporaryPoseSpace` is `true` for Enter and `false` for Exit; `delay` is in seconds when `fixed_delay` is `true` and a fraction of the state otherwise. A `PlayAudio` without a `source` plays the AudioSource on the root that the controller's object paths start at: the avatar root, or the supplied root for a relative controller. A source path is resolved like any other object path of that controller.
+
+Each `BlendshapesSetWeight` is one entry of a `VRCAnimatorFaceTrackingBlendshapesSet`. The client gathers the entries of a state into one component in written order and starts another one past the 64 entries a component processes. `name` is a set of the Avatar Descriptor, which the compiler cannot see, so it is not an extern and nothing checks it. A `RangedParameter` turns on Convert Range, and `to_min` may be greater than `to_max`. `lerp_speed` is the weight change per second, `0` applying it at once.
 
 ### Menu
 

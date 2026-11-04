@@ -1,7 +1,9 @@
 use crate::{
     core::phase::Compiled,
     unity::state::GenericStateBehavior,
-    vrchat::state_behaviour::{LayerControl, LocomotionControl, ParameterDrive, PlayAudio, PlayableLayerControl, TemporaryPoseSpace, TrackingControl},
+    vrchat::state_behaviour::{
+        BlendshapesSetWeight, LayerControl, LocomotionControl, ParameterDrive, PlayAudio, PlayableLayerControl, TemporaryPoseSpace, TrackingControl,
+    },
 };
 
 /// State behavior attached to a compiled state.
@@ -15,4 +17,5 @@ pub enum Behavior {
     TemporaryPoseSpace(TemporaryPoseSpace),
     PlayableLayerControl(PlayableLayerControl),
     PlayAudio(PlayAudio<Compiled>),
+    BlendshapesSetWeight(BlendshapesSetWeight<Compiled>),
 }

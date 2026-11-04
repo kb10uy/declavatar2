@@ -1,7 +1,9 @@
 use crate::{
     core::{phase::Declared, resolution::Unresolved, value_set::ValueSet},
     unity::{animation::FixedAnimationEntry, state::GenericStateBehavior, value::AnimatedValue},
-    vrchat::state_behaviour::{LayerControl, LocomotionControl, ParameterDriveTarget, PlayAudio, PlayableLayerControl, TemporaryPoseSpace, TrackingControl},
+    vrchat::state_behaviour::{
+        BlendshapesSetWeight, LayerControl, LocomotionControl, ParameterDriveTarget, PlayAudio, PlayableLayerControl, TemporaryPoseSpace, TrackingControl,
+    },
 };
 
 /// Set of animated targets and their values written in one place of the script.
@@ -39,6 +41,7 @@ pub enum Behavior {
     TemporaryPoseSpace(TemporaryPoseSpace),
     PlayableLayerControl(PlayableLayerControl),
     PlayAudio(PlayAudio<Declared>),
+    BlendshapesSetWeight(BlendshapesSetWeight<Declared>),
 }
 
 /// Parameter drive written as `da.drive_*`.
