@@ -18,8 +18,8 @@ use crate::{
         value::AnimatedValue,
     },
     vrchat::state_behaviour::{
-        ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDriveTarget, PlayAudio, PlayableLayerControl, PlaybackOrder,
-        TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
+        ApplySettings, AudioSetting, BlendablePlayable, BlendshapesSetSource, BlendshapesSetWeight, LayerControl, LocomotionControl, ParameterDriveTarget,
+        PlayAudio, PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
     },
 };
 
@@ -89,6 +89,7 @@ pub(crate) fn register(lua: &Lua, da: &Table) -> LuaResult<()> {
     da.set("locomotion", lua.create_function(locomotion)?)?;
     da.set("pose_space", lua.create_function(pose_space)?)?;
     da.set("play_audio", lua.create_function(play_audio)?)?;
+    da.set("ft_bs_set", lua.create_function(ft_bs_set)?)?;
     Ok(())
 }
 
@@ -381,6 +382,66 @@ fn play_audio(lua: &Lua, (source, arguments): (String, Variadic<Value>)) -> LuaR
         play_on_exit,
         stop_on_exit,
     })))
+}
+
+fn ft_bs_set(lua: &Lua, (name, weight, table): (String, Value, Option<Table>)) -> LuaResult<node::Behavior> {
+    const OWNER: &str = "da.ft_bs_set";
+
+    if name.is_empty() {
+        return Err(LuaError::runtime(format!("{OWNER}: the name of a set on the avatar descriptor is needed")));
+    }
+
+    let mut options = Options::new(OWNER, table);
+    let lerp_speed = options.take::<f64>("lerp_speed")?.unwrap_or(0.0);
+    let from_range = options
+        .take::<Value>("from_range")?
+        .map(|value| range(OWNER, "from_range", &value))
+        .transpose()?;
+    let to_range = options.take::<Value>("to_range")?.map(|value| range(OWNER, "to_range", &value)).transpose()?;
+    options.finish()?;
+
+    within(OWNER, "lerp_speed", lerp_speed, 0.0, 100.0)?;
+    for value in to_range.into_iter().flatten() {
+        within(OWNER, "to_range", value, 0.0, 1.0)?;
+    }
+
+    let source = match weight {
+        Value::String(parameter) => {
+            let parameter = located(lua, parameter.to_str()?.to_owned());
+            match (from_range, to_range) {
+                (None, None) => BlendshapesSetSource::Parameter(parameter),
+                (Some(from_range), Some(to_range)) => BlendshapesSetSource::RangedParameter {
+                    parameter,
+                    from_range,
+                    to_range,
+                },
+                _ => {
+                    return Err(LuaError::runtime(format!(
+                        "{OWNER}: a converted weight maps one range onto another, so `from_range` and `to_range` are written together"
+                    )));
+                }
+            }
+        }
+        Value::Integer(_) | Value::Number(_) if from_range.is_some() || to_range.is_some() => {
+            return Err(LuaError::runtime(format!(
+                "{OWNER}: `from_range` and `to_range` convert a parameter, so a fixed weight takes neither"
+            )));
+        }
+        Value::Integer(weight) => fixed_weight(OWNER, weight as f64)?,
+        Value::Number(weight) => fixed_weight(OWNER, weight)?,
+        other => return Err(wrong_value(OWNER, "a number or a parameter name", &other)),
+    };
+
+    Ok(node::Behavior(Behavior::BlendshapesSetWeight(BlendshapesSetWeight {
+        name,
+        source,
+        lerp_speed,
+    })))
+}
+
+fn fixed_weight(owner: &'static str, weight: f64) -> LuaResult<BlendshapesSetSource<Declared>> {
+    within(owner, "weight", weight, 0.0, 1.0)?;
+    Ok(BlendshapesSetSource::Value(weight))
 }
 
 fn apply_option(options: &mut Options, owner: &'static str, key: &'static str) -> LuaResult<ApplySettings> {
@@ -811,6 +872,51 @@ mod tests {
     #[case::exit_later("da.pose_space('exit', { delay = 0.5, fixed_delay = false })", TemporaryPoseSpace { enter: false, fixed_delay: false, delay: 0.5 })]
     fn a_pose_space_enters_or_exits(#[case] expression: &str, #[case] expected: TemporaryPoseSpace) {
         assert_eq!(behavior_of(expression), Behavior::TemporaryPoseSpace(expected));
+    }
+
+    #[rstest]
+    #[case::fixed("da.ft_bs_set('Happy', 0.5)", BlendshapesSetSource::Value(0.5), 0.0)]
+    #[case::integer("da.ft_bs_set('Happy', 1)", BlendshapesSetSource::Value(1.0), 0.0)]
+    #[case::lerped("da.ft_bs_set('Happy', 0, { lerp_speed = 2 })", BlendshapesSetSource::Value(0.0), 2.0)]
+    #[case::parameter("da.ft_bs_set('Happy', 'Smile')", BlendshapesSetSource::Parameter(Unresolved::new("Smile".into())), 0.0)]
+    #[case::converted(
+        "da.ft_bs_set('Happy', 'Smile', { from_range = { -1, 1 }, to_range = { 1, 0 }, lerp_speed = 100 })",
+        BlendshapesSetSource::RangedParameter { parameter: Unresolved::new("Smile".into()), from_range: [-1.0, 1.0], to_range: [1.0, 0.0] },
+        100.0,
+    )]
+    fn a_blendshapes_set_takes_a_fixed_weight_or_a_parameter(
+        #[case] expression: &str,
+        #[case] source: BlendshapesSetSource<Declared>,
+        #[case] lerp_speed: f64,
+    ) {
+        assert_eq!(
+            behavior_of(expression),
+            Behavior::BlendshapesSetWeight(BlendshapesSetWeight {
+                name: "Happy".into(),
+                source,
+                lerp_speed,
+            })
+        );
+    }
+
+    #[rstest]
+    #[case::empty_name("da.ft_bs_set('', 1)", "the name of a set on the avatar descriptor is needed")]
+    #[case::no_weight("da.ft_bs_set('Happy')", "the value must be a number or a parameter name")]
+    #[case::boolean_weight("da.ft_bs_set('Happy', true)", "the value must be a number or a parameter name")]
+    #[case::weight_above("da.ft_bs_set('Happy', 1.5)", "`weight` is between 0 and 1")]
+    #[case::weight_below("da.ft_bs_set('Happy', -0.5)", "`weight` is between 0 and 1")]
+    #[case::fast_lerp("da.ft_bs_set('Happy', 1, { lerp_speed = 101 })", "`lerp_speed` is between 0 and 100")]
+    #[case::negative_lerp("da.ft_bs_set('Happy', 1, { lerp_speed = -1 })", "`lerp_speed` is between 0 and 100")]
+    #[case::one_range("da.ft_bs_set('Happy', 'Smile', { from_range = { 0, 1 } })", "`from_range` and `to_range` are written together")]
+    #[case::range_on_a_value("da.ft_bs_set('Happy', 1, { to_range = { 0, 1 } })", "a fixed weight takes neither")]
+    #[case::weight_range_above(
+        "da.ft_bs_set('Happy', 'Smile', { from_range = { 0, 1 }, to_range = { 0, 2 } })",
+        "`to_range` is between 0 and 1"
+    )]
+    #[case::unknown_option("da.ft_bs_set('Happy', 1, { speed = 1 })", "unknown option `speed`")]
+    fn a_bad_blendshapes_set_is_rejected_where_it_is_written(#[case] expression: &str, #[case] expected: &str) {
+        let message = eval_error(expression);
+        assert!(message.contains(expected), "{message}");
     }
 
     fn audio_of(expression: &str) -> PlayAudio<Declared> {

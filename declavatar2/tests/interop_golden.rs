@@ -20,8 +20,9 @@ use declavatar2::{
         ObjectPath, PathMode,
     },
     vrchat::{
-        ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlayableLayer,
-        PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
+        ApplySettings, AudioSetting, BlendablePlayable, BlendshapesSetSource, BlendshapesSetWeight, LayerControl, LocomotionControl, ParameterDrive,
+        ParameterDriveTarget, PlayAudio, PlayableLayer, PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode,
+        TrackingControlTarget,
         expr_parameter::{
             ExpressionParameter, ExpressionParameterSignedness, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup,
         },
@@ -538,6 +539,25 @@ fn behaviors(refs: &Refs) -> Vec<Behavior> {
             stop_on_enter: true,
             play_on_exit: false,
             stop_on_exit: true,
+        }),
+        Behavior::BlendshapesSetWeight(BlendshapesSetWeight {
+            name: "Happy".into(),
+            source: BlendshapesSetSource::Value(0.5),
+            lerp_speed: 2.0,
+        }),
+        Behavior::BlendshapesSetWeight(BlendshapesSetWeight {
+            name: "Angry".into(),
+            source: BlendshapesSetSource::Parameter(int("Emote")),
+            lerp_speed: 0.0,
+        }),
+        Behavior::BlendshapesSetWeight(BlendshapesSetWeight {
+            name: "Sad".into(),
+            source: BlendshapesSetSource::RangedParameter {
+                parameter: int("Emote"),
+                from_range: [0.0, 255.0],
+                to_range: [1.0, 0.0],
+            },
+            lerp_speed: 100.0,
         }),
     ]
 }

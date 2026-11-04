@@ -19,8 +19,8 @@ use declavatar2::{
         value::{AnimatedValue, AnimatedValueType},
     },
     vrchat::{
-        ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio, PlayableLayerControl,
-        PlaybackOrder, TemporaryPoseSpace,
+        ApplySettings, AudioSetting, BlendablePlayable, BlendshapesSetSource, BlendshapesSetWeight, LayerControl, LocomotionControl, ParameterDrive,
+        ParameterDriveTarget, PlayAudio, PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace,
         expr_parameter::{
             ExpressionParameter, ExpressionParameterSignedness, ExpressionParameterTypeDefault, ExpressionParameterWidth, ProvidedParameterGroup,
         },
@@ -498,6 +498,8 @@ return da.avatar({
                     da.playable_control("action", { goal_weight = 0 }),
                     da.play_audio("Speaker", { parameter = "Voice", volume = { 0.5, 1 } }, { "Hello", "Bye" }),
                     da.play_audio("", {}),
+                    da.ft_bs_set("Happy", 0.5, { lerp_speed = 2 }),
+                    da.ft_bs_set("Angry", "Blend", { from_range = { 0, 1 }, to_range = { 1, 0 } }),
                 } }),
             }),
             da.blend_layer("Face", {
@@ -585,6 +587,8 @@ fn the_other_vrchat_behaviors_compile_through_to_the_avatar() {
         Behavior::PlayableLayerControl(playable),
         Behavior::PlayAudio(audio),
         Behavior::PlayAudio(root_audio),
+        Behavior::BlendshapesSetWeight(happy),
+        Behavior::BlendshapesSetWeight(angry),
     ] = behaviors
     else {
         panic!("expected the behaviors in the written order, got {behaviors:?}");
@@ -620,6 +624,27 @@ fn the_other_vrchat_behaviors_compile_through_to_the_avatar() {
 
     let PlayAudio { source, order, clips, .. } = root_audio;
     assert_eq!((source, order, clips.value.len()), (&None, &PlaybackOrder::Random, 0));
+
+    assert_eq!(
+        *happy,
+        BlendshapesSetWeight {
+            name: "Happy".into(),
+            source: BlendshapesSetSource::Value(0.5),
+            lerp_speed: 2.0,
+        }
+    );
+    assert_eq!(
+        *angry,
+        BlendshapesSetWeight {
+            name: "Angry".into(),
+            source: BlendshapesSetSource::RangedParameter {
+                parameter: Resolved::new("Blend".into(), AnimatedValueType::Float),
+                from_range: [0.0, 1.0],
+                to_range: [1.0, 0.0],
+            },
+            lerp_speed: 0.0,
+        }
+    );
 }
 
 #[rstest]

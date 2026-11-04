@@ -44,8 +44,9 @@ use crate::{
         },
         playable_layer::PlayableLayer,
         state_behaviour::{
-            ApplySettings, AudioSetting, BlendablePlayable, LayerControl, LocomotionControl, ParameterDrive, ParameterDriveTarget, PlayAudio,
-            PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode, TrackingControlTarget,
+            ApplySettings, AudioSetting, BlendablePlayable, BlendshapesSetSource, BlendshapesSetWeight, LayerControl, LocomotionControl, ParameterDrive,
+            ParameterDriveTarget, PlayAudio, PlayableLayerControl, PlaybackOrder, TemporaryPoseSpace, TrackingControl, TrackingControlMode,
+            TrackingControlTarget,
         },
     },
 };
@@ -661,6 +662,18 @@ enum_cases! {
         temporary_pose_space: Behavior::TemporaryPoseSpace(_) => Behavior::TemporaryPoseSpace(TemporaryPoseSpace { enter: true, fixed_delay: false, delay: 0.5 }),
         playable_layer_control: Behavior::PlayableLayerControl(_) => Behavior::PlayableLayerControl(PlayableLayerControl { playable: BlendablePlayable::Action, goal_weight: 1.0, blend_duration: 0.5 }),
         play_audio: Behavior::PlayAudio(_) => Behavior::PlayAudio(audio_fixture(PlaybackOrder::Parameter(param("Int")))),
+        blendshapes_set_weight: Behavior::BlendshapesSetWeight(_) => Behavior::BlendshapesSetWeight(BlendshapesSetWeight { name: "Happy".into(), source: BlendshapesSetSource::Value(0.5), lerp_speed: 2.0 }),
+    }
+}
+
+enum_cases! {
+    fn blendshapes_set_sources(value: BlendshapesSetSource<Compiled>) {
+        round_trip(value);
+    }
+    cases {
+        value: BlendshapesSetSource::Value(_) => BlendshapesSetSource::Value(0.25),
+        parameter: BlendshapesSetSource::Parameter(_) => BlendshapesSetSource::Parameter(param("Int")),
+        ranged_parameter: BlendshapesSetSource::RangedParameter { .. } => BlendshapesSetSource::RangedParameter { parameter: param("Int"), from_range: [0.0, 255.0], to_range: [1.0, 0.0] },
     }
 }
 

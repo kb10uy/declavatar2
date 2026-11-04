@@ -244,3 +244,31 @@ pub enum ApplySettings {
     IfStopped,
     Never,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlendshapesSetWeight<Ph: Phase> {
+    pub name: String,
+    pub source: BlendshapesSetSource<Ph>,
+    pub lerp_speed: f64,
+}
+
+impl<Ph: Phase> StateBehavior for BlendshapesSetWeight<Ph> {
+    fn name(&self) -> &'static str {
+        "VRCAnimatorFaceTrackingBlendshapesSet"
+    }
+
+    fn clone(&self) -> Box<dyn StateBehavior> {
+        Box::new(Clone::clone(self))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BlendshapesSetSource<Ph: Phase> {
+    Value(f64),
+    Parameter(Ph::ParameterRef),
+    RangedParameter {
+        parameter: Ph::ParameterRef,
+        from_range: [f64; 2],
+        to_range: [f64; 2],
+    },
+}

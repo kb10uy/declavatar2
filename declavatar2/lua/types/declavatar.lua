@@ -302,6 +302,11 @@ local da = {}
 ---@field delay? number Defaults to 0.
 ---@field fixed_delay? boolean Whether `delay` is in seconds rather than a fraction of the state. Defaults to true.
 
+---@class da.BlendshapesSetOptions
+---@field lerp_speed? number Weight change per second, up to 100. Defaults to 0, which applies the weight at once.
+---@field from_range? da.Range Values of the parameter that map onto `to_range`, written together with it.
+---@field to_range? da.Range Weights between 0 and 1. Writing the larger one first inverts the parameter.
+
 ---@class da.PlayAudioOptions
 ---@field order? da.PlaybackOrder Defaults to `"parameter"` when `parameter` is written and `"random"` otherwise.
 ---@field parameter? string Int parameter holding the index of the clip to play, read by order `"parameter"`.
@@ -677,6 +682,17 @@ function da.pose_space(mode, options) end
 ---@return da.Behavior
 ---@overload fun(source: string, clips: da.AudioClipList): da.Behavior
 function da.play_audio(source, options, clips) end
+
+--- Sets the weight of a face tracking Blendshapes Set when the state is entered.
+---
+--- `name` is a set of the Avatar Descriptor, which a script cannot see, so it is not checked.
+--- `weight` is a number between 0 and 1, or the name of a parameter read once on entering the
+--- state. `from_range` and `to_range` convert a parameter and cannot be used with a number.
+---@param name string
+---@param weight number|string
+---@param options? da.BlendshapesSetOptions
+---@return da.Behavior
+function da.ft_bs_set(name, weight, options) end
 
 --------------------------------------------------------------------------------
 -- Layers
